@@ -83,14 +83,20 @@ class TournamentRepository {
       'limit': limit.toString(),
     };
 
+    print('TournamentRepository: Fetching tournaments with params: $queryParams');
+
     final response = await _client.get(
       '/tournaments',
       queryParameters: queryParams,
     );
 
+    print('TournamentRepository: Response received: ${response.data}');
+
     final data = response.data as Map<String, dynamic>;
     final tournamentsJson = data['data'] as List;
     final metaJson = data['meta'] as Map<String, dynamic>;
+
+    print('TournamentRepository: Parsing ${tournamentsJson.length} tournaments');
 
     final tournaments = tournamentsJson
         .map((json) => TournamentModel.fromJson(json).toEntity())

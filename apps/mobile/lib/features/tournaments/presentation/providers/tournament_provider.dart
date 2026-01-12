@@ -42,14 +42,19 @@ class TournamentListState {
 class TournamentListNotifier extends StateNotifier<TournamentListState> {
   final TournamentRepository _repository;
 
-  TournamentListNotifier(this._repository) : super(TournamentListState.initial()) {
-    loadTournaments();
+  TournamentListNotifier(this._repository) : super(const TournamentListState()) {
+    _init();
+  }
+
+  Future<void> _init() async {
+    await loadTournaments(refresh: true);
   }
 
   /// Load tournaments with current filters
   Future<void> loadTournaments({bool refresh = false}) async {
     if (!refresh && state.isLoading) return;
 
+    print('TournamentListNotifier: Loading tournaments...');
     state = state.copyWith(isLoading: true, error: null);
 
     try {
@@ -58,12 +63,15 @@ class TournamentListNotifier extends StateNotifier<TournamentListState> {
         page: 1,
       );
 
+      print('TournamentListNotifier: Loaded ${response.tournaments.length} tournaments');
       state = state.copyWith(
         tournaments: response.tournaments,
         meta: response.meta,
         isLoading: false,
       );
-    } catch (e) {
+    } catch (e, stack) {
+      print('TournamentListNotifier: Error loading tournaments: $e');
+      print('Stack trace: $stack');
       state = state.copyWith(
         isLoading: false,
         error: e.toString(),

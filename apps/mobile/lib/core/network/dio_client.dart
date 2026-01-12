@@ -173,7 +173,7 @@ class DioClient {
         }
 
         if (statusCode == 401) {
-          return AuthException(
+          return AppAuthException(
             message: message,
             code: code ?? 'UNAUTHORIZED',
           );

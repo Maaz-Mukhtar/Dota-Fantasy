@@ -78,7 +78,7 @@ class _TournamentListScreenState extends ConsumerState<TournamentListScreen>
       return EmptyState(
         icon: Icons.emoji_events_outlined,
         title: 'No Tournaments',
-        message: 'No tournaments found for the selected filter.',
+        description: 'No tournaments found for the selected filter.',
         actionLabel: 'Refresh',
         onAction: () => ref.read(tournamentListProvider.notifier).loadTournaments(refresh: true),
       );
