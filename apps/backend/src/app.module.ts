@@ -8,6 +8,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { TournamentsModule } from './modules/tournaments/tournaments.module';
 import { TeamsModule } from './modules/teams/teams.module';
 import { MatchesModule } from './modules/matches/matches.module';
+import { LeaguesModule } from './modules/leagues/leagues.module';
 import { SupabaseModule } from './integrations/supabase/supabase.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
@@ -32,6 +33,7 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
     TournamentsModule,
     TeamsModule,
     MatchesModule,
+    LeaguesModule,
   ],
   providers: [
     // Global JWT guard

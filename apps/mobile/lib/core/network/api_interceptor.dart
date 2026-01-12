@@ -24,24 +24,29 @@ class AuthInterceptor extends Interceptor {
     DioException err,
     ErrorInterceptorHandler handler,
   ) async {
-    // If we get a 401, try to refresh the token
+    // If we get a 401 and have a session, try to refresh the token
     if (err.response?.statusCode == 401) {
-      try {
-        final response = await Supabase.instance.client.auth.refreshSession();
+      final currentSession = Supabase.instance.client.auth.currentSession;
 
-        if (response.session != null) {
-          // Retry the request with the new token
-          final options = err.requestOptions;
-          options.headers['Authorization'] =
-              'Bearer ${response.session!.accessToken}';
+      // Only attempt refresh if we have an existing session with refresh token
+      if (currentSession?.refreshToken != null) {
+        try {
+          final response = await Supabase.instance.client.auth.refreshSession();
 
-          final dio = Dio();
-          final retryResponse = await dio.fetch(options);
-          return handler.resolve(retryResponse);
+          if (response.session != null) {
+            // Retry the request with the new token
+            final options = err.requestOptions;
+            options.headers['Authorization'] =
+                'Bearer ${response.session!.accessToken}';
+
+            final dio = Dio();
+            final retryResponse = await dio.fetch(options);
+            return handler.resolve(retryResponse);
+          }
+        } catch (e) {
+          // Token refresh failed - don't sign out, just let the error propagate
+          // The app can handle showing the login screen if needed
         }
-      } catch (e) {
-        // Token refresh failed, sign out the user
-        await Supabase.instance.client.auth.signOut();
       }
     }
 

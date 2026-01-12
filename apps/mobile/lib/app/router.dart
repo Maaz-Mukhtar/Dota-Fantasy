@@ -6,6 +6,8 @@ import '../features/auth/presentation/providers/auth_provider.dart';
 import '../features/auth/presentation/screens/login_screen.dart';
 import '../features/auth/presentation/screens/signup_screen.dart';
 import '../features/auth/presentation/screens/profile_screen.dart';
+import '../features/leagues/presentation/screens/leagues_screen.dart';
+import '../features/leagues/presentation/screens/league_detail_screen.dart';
 import '../features/tournaments/presentation/screens/tournament_list_screen.dart';
 import '../features/tournaments/presentation/screens/tournament_detail_screen.dart';
 import '../shared/widgets/home_screen.dart';
@@ -98,7 +100,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/leagues',
-        builder: (context, state) => const PlaceholderScreen(title: 'Leagues'),
+        builder: (context, state) => const LeaguesScreen(),
+      ),
+      GoRoute(
+        path: '/leagues/:id',
+        builder: (context, state) => LeagueDetailScreen(
+          leagueId: state.pathParameters['id']!,
+        ),
       ),
       GoRoute(
         path: '/settings',

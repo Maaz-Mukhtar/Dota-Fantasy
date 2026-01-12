@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/auth/presentation/providers/auth_provider.dart';
+import '../../features/leagues/presentation/screens/leagues_screen.dart';
 import '../../features/tournaments/presentation/screens/tournament_list_screen.dart';
 
 /// Main home screen with bottom navigation
@@ -363,20 +364,13 @@ class _FantasyTab extends StatelessWidget {
   }
 }
 
-/// Leagues tab placeholder
+/// Leagues tab - uses the LeaguesScreen
 class _LeaguesTab extends StatelessWidget {
   const _LeaguesTab();
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Leagues'),
-      ),
-      body: const Center(
-        child: Text('Leagues will be implemented in Slice 7'),
-      ),
-    );
+    return const LeaguesScreen();
   }
 }
 
