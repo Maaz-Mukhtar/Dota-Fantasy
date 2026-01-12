@@ -6,6 +6,8 @@ import { APP_GUARD, APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { configuration } from './config/configuration';
 import { AuthModule } from './modules/auth/auth.module';
 import { TournamentsModule } from './modules/tournaments/tournaments.module';
+import { TeamsModule } from './modules/teams/teams.module';
+import { MatchesModule } from './modules/matches/matches.module';
 import { SupabaseModule } from './integrations/supabase/supabase.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
@@ -28,6 +30,8 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
     // Feature modules
     AuthModule,
     TournamentsModule,
+    TeamsModule,
+    MatchesModule,
   ],
   providers: [
     // Global JWT guard

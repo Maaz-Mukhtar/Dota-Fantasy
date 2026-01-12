@@ -1,6 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/dio_client.dart';
+import '../../teams/domain/entities/team.dart';
+import '../../teams/data/models/team_model.dart';
+import '../../matches/domain/entities/match.dart';
+import '../../matches/data/models/match_model.dart';
 import '../domain/entities/tournament.dart';
 import 'models/tournament_model.dart';
 
@@ -112,6 +116,42 @@ class TournamentRepository {
   Future<Tournament> getTournament(String id) async {
     final response = await _client.get('/tournaments/$id');
     final data = response.data as Map<String, dynamic>;
-    return TournamentModel.fromJson(data).toEntity();
+    final tournamentData = data['data'] as Map<String, dynamic>;
+    return TournamentModel.fromJson(tournamentData).toEntity();
+  }
+
+  /// Get teams participating in a tournament
+  Future<List<Team>> getTournamentTeams(String tournamentId) async {
+    final response = await _client.get('/tournaments/$tournamentId/teams');
+    final data = response.data as Map<String, dynamic>;
+    final innerData = data['data'] as Map<String, dynamic>;
+    final teamsJson = innerData['data'] as List;
+
+    return teamsJson
+        .map((json) => TeamModel.fromJson(json as Map<String, dynamic>).toEntity())
+        .toList();
+  }
+
+  /// Get matches in a tournament
+  Future<List<Match>> getTournamentMatches(
+    String tournamentId, {
+    String? status,
+    String? stage,
+  }) async {
+    final queryParams = <String, String>{};
+    if (status != null) queryParams['status'] = status;
+    if (stage != null) queryParams['stage'] = stage;
+
+    final response = await _client.get(
+      '/tournaments/$tournamentId/matches',
+      queryParameters: queryParams.isNotEmpty ? queryParams : null,
+    );
+    final data = response.data as Map<String, dynamic>;
+    final innerData = data['data'] as Map<String, dynamic>;
+    final matchesJson = innerData['data'] as List;
+
+    return matchesJson
+        .map((json) => MatchModel.fromJson(json as Map<String, dynamic>).toEntity())
+        .toList();
   }
 }

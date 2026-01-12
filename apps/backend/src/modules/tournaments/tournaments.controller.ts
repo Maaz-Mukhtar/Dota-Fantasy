@@ -33,4 +33,26 @@ export class TournamentsController {
   async findOne(@Param('id') id: string) {
     return this.tournamentsService.findOne(id);
   }
+
+  /**
+   * Get teams participating in a tournament
+   */
+  @Public()
+  @Get(':id/teams')
+  async getTeams(@Param('id') id: string) {
+    return this.tournamentsService.getTeams(id);
+  }
+
+  /**
+   * Get matches in a tournament
+   */
+  @Public()
+  @Get(':id/matches')
+  async getMatches(
+    @Param('id') id: string,
+    @Query('status') status?: 'scheduled' | 'live' | 'completed' | 'postponed' | 'cancelled',
+    @Query('stage') stage?: string,
+  ) {
+    return this.tournamentsService.getMatches(id, { status, stage });
+  }
 }

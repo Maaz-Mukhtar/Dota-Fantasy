@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/tournament_repository.dart';
 import '../../domain/entities/tournament.dart';
+import '../../../teams/domain/entities/team.dart';
+import '../../../matches/domain/entities/match.dart';
 
 /// Tournament list state
 class TournamentListState {
@@ -148,4 +150,45 @@ final ongoingTournamentsProvider = Provider<List<Tournament>>((ref) {
 final completedTournamentsProvider = Provider<List<Tournament>>((ref) {
   final state = ref.watch(tournamentListProvider);
   return state.tournaments.where((t) => t.isCompleted).toList();
+});
+
+/// Tournament teams provider
+final tournamentTeamsProvider =
+    FutureProvider.family<List<Team>, String>((ref, tournamentId) async {
+  final repository = ref.read(tournamentRepositoryProvider);
+  return repository.getTournamentTeams(tournamentId);
+});
+
+/// Tournament matches provider
+final tournamentMatchesProvider =
+    FutureProvider.family<List<Match>, String>((ref, tournamentId) async {
+  final repository = ref.read(tournamentRepositoryProvider);
+  return repository.getTournamentMatches(tournamentId);
+});
+
+/// Live matches for a tournament
+final tournamentLiveMatchesProvider =
+    Provider.family<AsyncValue<List<Match>>, String>((ref, tournamentId) {
+  final matchesAsync = ref.watch(tournamentMatchesProvider(tournamentId));
+  return matchesAsync.whenData(
+    (matches) => matches.where((m) => m.isLive).toList(),
+  );
+});
+
+/// Upcoming matches for a tournament
+final tournamentUpcomingMatchesProvider =
+    Provider.family<AsyncValue<List<Match>>, String>((ref, tournamentId) {
+  final matchesAsync = ref.watch(tournamentMatchesProvider(tournamentId));
+  return matchesAsync.whenData(
+    (matches) => matches.where((m) => m.isUpcoming).toList(),
+  );
+});
+
+/// Completed matches for a tournament
+final tournamentCompletedMatchesProvider =
+    Provider.family<AsyncValue<List<Match>>, String>((ref, tournamentId) {
+  final matchesAsync = ref.watch(tournamentMatchesProvider(tournamentId));
+  return matchesAsync.whenData(
+    (matches) => matches.where((m) => m.isCompleted).toList(),
+  );
 });

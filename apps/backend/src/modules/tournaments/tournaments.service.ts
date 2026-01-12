@@ -67,4 +67,71 @@ export class TournamentsService {
 
     return data;
   }
+
+  async getTeams(tournamentId: string) {
+    // First verify tournament exists
+    await this.findOne(tournamentId);
+
+    const { data, error } = await this.supabase.client
+      .from('tournament_teams')
+      .select(`
+        seed,
+        group_name,
+        placement,
+        prize_won,
+        team:teams(*)
+      `)
+      .eq('tournament_id', tournamentId)
+      .order('seed', { ascending: true });
+
+    if (error) {
+      throw new Error(`Failed to fetch tournament teams: ${error.message}`);
+    }
+
+    const teams = data?.map(item => ({
+      ...item.team,
+      seed: item.seed,
+      groupName: item.group_name,
+      placement: item.placement,
+      prizeWon: item.prize_won,
+    })) || [];
+
+    return { data: teams };
+  }
+
+  async getMatches(
+    tournamentId: string,
+    filters: { status?: string; stage?: string } = {},
+  ) {
+    // First verify tournament exists
+    await this.findOne(tournamentId);
+
+    let query = this.supabase.client
+      .from('matches')
+      .select(`
+        *,
+        team1:teams!matches_team1_id_fkey(*),
+        team2:teams!matches_team2_id_fkey(*),
+        winner:teams!matches_winner_id_fkey(*)
+      `)
+      .eq('tournament_id', tournamentId);
+
+    if (filters.status) {
+      query = query.eq('status', filters.status);
+    }
+
+    if (filters.stage) {
+      query = query.eq('stage', filters.stage);
+    }
+
+    query = query.order('scheduled_at', { ascending: true });
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(`Failed to fetch tournament matches: ${error.message}`);
+    }
+
+    return { data: data || [] };
+  }
 }
