@@ -39,8 +39,11 @@ export interface LiquipediaApiResponse {
 
 export interface TournamentInfo {
   name: string;
+  shortName?: string;
+  tickerName?: string;
   pageName: string;
   tier?: string;
+  valveTier?: string;
   type?: string;
   organizer?: string;
   sponsor?: string;
@@ -52,11 +55,42 @@ export interface TournamentInfo {
   prizePoolUsd?: number;
   startDate?: string;
   endDate?: string;
+  patch?: string;
+  leagueId?: string;
   liquipediaUrl: string;
   teams?: TournamentTeam[];
   participants?: number;
   winner?: string;
   runnerUp?: string;
+  // Enhanced data
+  directInvites?: TournamentParticipant[];
+  qualifiedTeams?: TournamentParticipant[];
+  prizeDistribution?: PrizeSlot[];
+}
+
+export interface TournamentParticipant {
+  teamName: string;
+  players: ParticipantPlayer[];
+  coach?: string;
+  qualifier?: string; // "Invited" or region qualifier name
+  placement?: string;
+  notes?: string;
+  logoUrl?: string;
+  logoDarkUrl?: string;
+}
+
+export interface ParticipantPlayer {
+  nickname: string;
+  position?: number; // 1-5
+  country?: string;
+  isSubstitute?: boolean;
+}
+
+export interface PrizeSlot {
+  place: string;
+  usdPrize?: number;
+  percentage?: string;
+  team?: string;
 }
 
 export interface TournamentTeam {

@@ -48,6 +48,30 @@ export class LiquipediaController {
   }
 
   /**
+   * Get comprehensive tournament data including all participants and rosters
+   * Example: GET /api/liquipedia/tournament-full/The_International/2025
+   */
+  @Public()
+  @Get('tournament-full/:pageName(*)')
+  async getTournamentFull(@Param('pageName') pageName: string): Promise<TournamentInfo> {
+    return this.liquipediaService.getTournamentFull(pageName);
+  }
+
+  /**
+   * Get The International with full data by year
+   * Example: GET /api/liquipedia/ti-full/2025
+   */
+  @Public()
+  @Get('ti-full/:year')
+  async getTheInternationalFull(@Param('year') year: string): Promise<TournamentInfo> {
+    const yearNum = parseInt(year, 10);
+    if (isNaN(yearNum) || yearNum < 2011 || yearNum > 2030) {
+      throw new Error('Invalid year. TI started in 2011.');
+    }
+    return this.liquipediaService.getTournamentFull(`The_International/${yearNum}`);
+  }
+
+  /**
    * Search tournaments by year
    * Example: GET /api/liquipedia/tournaments/2024
    */
@@ -73,5 +97,32 @@ export class LiquipediaController {
   ): Promise<string[]> {
     const limitNum = limit ? parseInt(limit, 10) : 50;
     return this.liquipediaService.getCategoryMembers(category, limitNum);
+  }
+
+  /**
+   * Get team logo URLs
+   * Example: GET /api/liquipedia/team-logo/Team_Liquid
+   */
+  @Public()
+  @Get('team-logo/:teamName')
+  async getTeamLogo(
+    @Param('teamName') teamName: string,
+  ): Promise<{ logoUrl?: string; logoDarkUrl?: string }> {
+    return this.liquipediaService.getTeamLogo(teamName.replace(/_/g, ' '));
+  }
+
+  /**
+   * Get The International with full data including team logos
+   * Example: GET /api/liquipedia/ti-full-logos/2025
+   * Note: This is slower due to fetching logos for each team (rate limited)
+   */
+  @Public()
+  @Get('ti-full-logos/:year')
+  async getTheInternationalFullWithLogos(@Param('year') year: string): Promise<TournamentInfo> {
+    const yearNum = parseInt(year, 10);
+    if (isNaN(yearNum) || yearNum < 2011 || yearNum > 2030) {
+      throw new Error('Invalid year. TI started in 2011.');
+    }
+    return this.liquipediaService.getTournamentFullWithLogos(`The_International/${yearNum}`);
   }
 }

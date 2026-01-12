@@ -7,6 +7,9 @@ import {
   TournamentInfo,
   ParsedInfobox,
   TournamentTeam,
+  TournamentParticipant,
+  ParticipantPlayer,
+  PrizeSlot,
 } from './liquipedia.types';
 
 @Injectable()
@@ -157,8 +160,9 @@ export class LiquipediaService {
 
   /**
    * Parse wiki template/infobox from wikitext
+   * @param preserveTemplates - keys for which to preserve raw template syntax
    */
-  parseInfobox(wikitext: string, templateName: string): ParsedInfobox {
+  parseInfobox(wikitext: string, templateName: string, preserveTemplates: string[] = []): ParsedInfobox {
     const result: ParsedInfobox = {};
 
     // Find the template - look for {{Infobox league with proper bracket matching
@@ -196,7 +200,12 @@ export class LiquipediaService {
       if (kvMatch) {
         // Save previous key-value if exists
         if (currentKey) {
-          result[currentKey] = this.cleanWikiMarkup(currentValue.trim());
+          // Preserve raw value for specific keys, clean others
+          if (preserveTemplates.includes(currentKey)) {
+            result[currentKey] = currentValue.trim();
+          } else {
+            result[currentKey] = this.cleanWikiMarkup(currentValue.trim());
+          }
         }
         currentKey = kvMatch[1].trim().toLowerCase().replace(/\s+/g, '_');
         currentValue = kvMatch[2];
@@ -208,7 +217,11 @@ export class LiquipediaService {
 
     // Save the last key-value pair
     if (currentKey) {
-      result[currentKey] = this.cleanWikiMarkup(currentValue.trim());
+      if (preserveTemplates.includes(currentKey)) {
+        result[currentKey] = currentValue.trim();
+      } else {
+        result[currentKey] = this.cleanWikiMarkup(currentValue.trim());
+      }
     }
 
     return result;
@@ -337,6 +350,414 @@ export class LiquipediaService {
     const s = ['th', 'st', 'nd', 'rd'];
     const v = n % 100;
     return s[(v - 20) % 10] || s[v] || s[0];
+  }
+
+  /**
+   * Parse TeamCard templates to extract full roster info
+   */
+  parseTeamCards(wikitext: string): TournamentParticipant[] {
+    const participants: TournamentParticipant[] = [];
+
+    // Find all TeamCard templates
+    const teamCardRegex = /\{\{TeamCard\s*\n([^}]*(?:\{\{[^}]*\}\}[^}]*)*)\}\}/gi;
+    let match;
+
+    while ((match = teamCardRegex.exec(wikitext)) !== null) {
+      const cardContent = match[1];
+      const participant = this.parseTeamCardContent(cardContent);
+      if (participant) {
+        participants.push(participant);
+      }
+    }
+
+    return participants;
+  }
+
+  /**
+   * Parse individual TeamCard content
+   */
+  private parseTeamCardContent(content: string): TournamentParticipant | null {
+    const lines = content.split('\n');
+    const data: Record<string, string> = {};
+
+    for (const line of lines) {
+      const kvMatch = line.match(/^\s*\|([^=]+)=(.*)$/);
+      if (kvMatch) {
+        const key = kvMatch[1].trim().toLowerCase();
+        let value = kvMatch[2].trim();
+        // Remove any additional pipe parameters within the value
+        // BUT preserve pipes inside [[ ]] wiki links
+        if (value.includes('|') && !value.includes('[[')) {
+          value = value.split('|')[0].trim();
+        }
+        data[key] = value;
+      }
+    }
+
+    if (!data['team']) return null;
+
+    // Extract players (p1-p5)
+    const players: ParticipantPlayer[] = [];
+    for (let i = 1; i <= 5; i++) {
+      const playerKey = `p${i}`;
+      if (data[playerKey]) {
+        let nickname = data[playerKey];
+        // Clean up player name - remove trailing wiki params
+        nickname = nickname.split('|')[0].trim();
+        const player: ParticipantPlayer = {
+          nickname: this.cleanWikiMarkup(nickname),
+          position: i,
+        };
+        // Check for country flag
+        if (data[`${playerKey}flag`]) {
+          player.country = data[`${playerKey}flag`];
+        }
+        players.push(player);
+      }
+    }
+
+    // Check for substitutes (s1, s2, etc.)
+    for (let i = 1; i <= 3; i++) {
+      const subKey = `s${i}`;
+      if (data[subKey]) {
+        let nickname = data[subKey];
+        nickname = nickname.split('|')[0].trim();
+        const player: ParticipantPlayer = {
+          nickname: this.cleanWikiMarkup(nickname),
+          isSubstitute: true,
+        };
+        if (data[`${subKey}flag`]) {
+          player.country = data[`${subKey}flag`];
+        }
+        players.push(player);
+      }
+    }
+
+    // Clean coach name
+    let coach = data['c'];
+    if (coach) {
+      coach = coach.split('|')[0].trim();
+      coach = this.cleanWikiMarkup(coach);
+    }
+
+    // Clean qualifier - extract region name from links like [[/Western Europe|Western Europe]]
+    let qualifier = data['qualifier'];
+    if (qualifier) {
+      // Handle [[/Region|Text]] format
+      const regionMatch = qualifier.match(/\[\[\/([^\]|]+)\|?([^\]]*)\]\]/);
+      if (regionMatch) {
+        qualifier = regionMatch[2] || regionMatch[1];
+      }
+      // Handle [[/Region]] format (no pipe)
+      else if (qualifier.startsWith('[[/')) {
+        qualifier = qualifier.replace(/\[\[\/([^\]]+)\]\]/, '$1');
+      }
+      qualifier = this.cleanWikiMarkup(qualifier);
+    }
+
+    // Clean notes - remove wiki references
+    let notes = data['inotes'];
+    if (notes) {
+      notes = notes.replace(/\{\{cite web[^}]*\}\}/gi, '');
+      notes = notes.replace(/\{\{Player[^}]*\}\}/gi, '');
+      notes = notes.replace(/<ref[^>]*>.*?<\/ref>/gi, '');
+      notes = notes.replace(/<ref[^/]*\/>/gi, '');
+      notes = this.cleanWikiMarkup(notes).trim();
+    }
+
+    return {
+      teamName: this.cleanWikiMarkup(data['team']),
+      players,
+      coach: coach || undefined,
+      qualifier: qualifier || undefined,
+      placement: data['placement'] || undefined,
+      notes: notes || undefined,
+    };
+  }
+
+  /**
+   * Parse prize pool distribution
+   */
+  parsePrizeDistribution(wikitext: string): PrizeSlot[] {
+    const slots: PrizeSlot[] = [];
+
+    // Match {{Slot|place=X|usdprize=Y|freetext=Z%|...}} patterns
+    // The usdprize often contains complex expressions like {{formatnum:{{#expr:...}}}}
+    const slotRegex = /\{\{Slot\|place=([^|]+)\|usdprize=([^|]*\}\}[^|]*|\S+)(?:\|freetext=([^|}]+))?/gi;
+    let match;
+
+    while ((match = slotRegex.exec(wikitext)) !== null) {
+      const place = match[1].trim();
+      const percentage = match[3]?.trim();
+
+      slots.push({
+        place,
+        percentage: percentage || undefined,
+      });
+    }
+
+    return slots;
+  }
+
+  /**
+   * Parse prize pool with known total to calculate actual amounts
+   */
+  parsePrizeDistributionWithTotal(wikitext: string, totalPrizePool: number): PrizeSlot[] {
+    const slots = this.parsePrizeDistribution(wikitext);
+
+    // Calculate actual amounts from percentages
+    for (const slot of slots) {
+      if (slot.percentage) {
+        const percentMatch = slot.percentage.match(/(\d+\.?\d*)%?/);
+        if (percentMatch) {
+          const percent = parseFloat(percentMatch[1]);
+          slot.usdPrize = Math.round(totalPrizePool * (percent / 100));
+        }
+      }
+    }
+
+    return slots;
+  }
+
+  /**
+   * Get comprehensive tournament data including all participants and prize pool
+   */
+  async getTournamentFull(pageName: string): Promise<TournamentInfo> {
+    this.logger.log(`Fetching full tournament data: ${pageName}`);
+
+    const wikitext = await this.getPageWikitext(pageName);
+
+    // Parse the Infobox league template - preserve prizepoolusd for template lookup
+    const infobox = this.parseInfobox(wikitext, 'Infobox league', ['prizepoolusd']);
+
+    this.logger.debug(`Parsed infobox fields: ${Object.keys(infobox).join(', ')}`);
+    this.logger.debug(`Prize pool raw: ${infobox['prizepoolusd']}`);
+
+    // Parse all TeamCards
+    const allParticipants = this.parseTeamCards(wikitext);
+
+    // Separate direct invites from qualified teams
+    const directInvites = allParticipants.filter(
+      p => p.qualifier?.toLowerCase() === 'invited' ||
+           p.qualifier?.toLowerCase().includes('replacement')
+    );
+    const qualifiedTeams = allParticipants.filter(
+      p => p.qualifier &&
+           p.qualifier.toLowerCase() !== 'invited' &&
+           !p.qualifier.toLowerCase().includes('replacement')
+    );
+
+    // Parse prize pool distribution (will be updated with amounts after we get total)
+    let prizeDistribution = this.parsePrizeDistribution(wikitext);
+
+    // Try to fetch actual prize pool value if it's a template reference
+    let prizePoolUsd: number | undefined;
+    const prizePoolTemplate = infobox['prizepoolusd'];
+    if (prizePoolTemplate?.includes(':')) {
+      // It's a template reference like {{:The_International/2025/prizepool}}
+      const prizePageMatch = prizePoolTemplate.match(/\{\{:([^}]+)\}\}/);
+      if (prizePageMatch) {
+        try {
+          const prizeWikitext = await this.getPageWikitext(prizePageMatch[1]);
+          prizePoolUsd = parseFloat(prizeWikitext.replace(/,/g, ''));
+        } catch (e) {
+          this.logger.warn(`Failed to fetch prize pool: ${e}`);
+        }
+      }
+    } else if (prizePoolTemplate) {
+      prizePoolUsd = parseFloat(prizePoolTemplate.replace(/[,$]/g, ''));
+    }
+
+    // If we have the total prize pool, calculate distribution amounts
+    if (prizePoolUsd && prizeDistribution.length > 0) {
+      prizeDistribution = this.parsePrizeDistributionWithTotal(wikitext, prizePoolUsd);
+    }
+
+    // Build location from city and country
+    const location = [infobox['city'], infobox['country']]
+      .filter(Boolean)
+      .join(', ');
+
+    // Build venue from multiple venue fields
+    const venues = [infobox['venue'], infobox['venue1'], infobox['venue2']]
+      .filter(Boolean)
+      .join('; ');
+
+    // Build organizers list
+    const organizers = [infobox['organizer'], infobox['organizer2']]
+      .filter(Boolean)
+      .join(', ');
+
+    return {
+      name: infobox['name'] || pageName.replace(/_/g, ' '),
+      shortName: infobox['shortname'],
+      tickerName: infobox['tickername'],
+      pageName,
+      tier: infobox['liquipediatier'],
+      valveTier: infobox['publishertier'],
+      type: infobox['type'],
+      organizer: organizers || undefined,
+      sponsor: infobox['sponsor'],
+      series: infobox['series'],
+      location: location || undefined,
+      venue: venues || undefined,
+      format: infobox['format'],
+      prizePool: infobox['prizepool'] || infobox['prizepoolusd'],
+      prizePoolUsd,
+      startDate: infobox['sdate'] || infobox['date'],
+      endDate: infobox['edate'],
+      patch: infobox['patch'],
+      leagueId: infobox['leagueid'],
+      liquipediaUrl: `https://liquipedia.net/dota2/${encodeURIComponent(pageName)}`,
+      teams: this.parseTeamPlacements(wikitext),
+      participants: infobox['team_number']
+        ? parseInt(infobox['team_number'], 10)
+        : undefined,
+      winner: infobox['winner'] || infobox['1st'],
+      runnerUp: infobox['runnerup'] || infobox['2nd'],
+      directInvites,
+      qualifiedTeams,
+      prizeDistribution,
+    };
+  }
+
+  /**
+   * Get comprehensive tournament data WITH team logos
+   * Note: This is slower due to fetching logos for each team (rate limited)
+   */
+  async getTournamentFullWithLogos(pageName: string): Promise<TournamentInfo> {
+    // First get the basic tournament data
+    const tournament = await this.getTournamentFull(pageName);
+
+    // Collect all team names
+    const allTeams = [
+      ...(tournament.directInvites || []),
+      ...(tournament.qualifiedTeams || []),
+    ];
+
+    this.logger.log(`Fetching logos for ${allTeams.length} teams...`);
+
+    // Fetch logos for each team
+    for (const team of allTeams) {
+      let logos = await this.getTeamLogo(team.teamName);
+
+      // If no logo found and team has notes about playing under different name,
+      // try to extract the original team name and fetch that logo
+      if (!logos.logoUrl && team.notes) {
+        const originalTeamMatch = team.notes.match(/^\[\[([^\]]+)\]\] competed under/i) ||
+                                   team.notes.match(/^([A-Za-z0-9\s]+) competed under/i);
+        if (originalTeamMatch) {
+          const originalTeamName = originalTeamMatch[1].trim();
+          this.logger.debug(`Trying original team name: ${originalTeamName}`);
+          logos = await this.getTeamLogo(originalTeamName);
+        }
+      }
+
+      team.logoUrl = logos.logoUrl;
+      team.logoDarkUrl = logos.logoDarkUrl;
+    }
+
+    return tournament;
+  }
+
+  /**
+   * Get image URL from Liquipedia using imageinfo API
+   */
+  async getImageUrl(imageName: string): Promise<string | null> {
+    if (!imageName) return null;
+
+    try {
+      const response = await this.makeRequest(
+        {
+          action: 'query',
+          titles: `File:${imageName}`,
+          prop: 'imageinfo',
+          iiprop: 'url',
+          format: 'json',
+        },
+        false,
+      );
+
+      const pages = response.query?.pages;
+      if (!pages) return null;
+
+      const page = Object.values(pages)[0] as any;
+      return page?.imageinfo?.[0]?.url || null;
+    } catch (error) {
+      this.logger.warn(`Failed to get image URL for ${imageName}: ${error}`);
+      return null;
+    }
+  }
+
+  /**
+   * Get team logo URL by fetching team page and extracting image
+   * Handles redirects automatically
+   */
+  async getTeamLogo(teamName: string): Promise<{ logoUrl?: string; logoDarkUrl?: string }> {
+    try {
+      // Convert team name to page name (replace spaces with underscores)
+      const pageName = teamName.replace(/\s+/g, '_');
+
+      // Fetch with redirect handling
+      const response = await this.makeRequest(
+        {
+          action: 'query',
+          titles: pageName,
+          prop: 'revisions',
+          rvprop: 'content',
+          redirects: '1', // Follow redirects
+          format: 'json',
+        },
+        false,
+      );
+
+      const pages = response.query?.pages;
+      if (!pages) return {};
+
+      const page = Object.values(pages)[0] as any;
+      const wikitext = page?.revisions?.[0]?.['*'] || '';
+
+      if (!wikitext) return {};
+
+      // Parse the team infobox
+      const infobox = this.parseInfobox(wikitext, 'Infobox team');
+
+      const imageName = infobox['image'];
+      const imageDarkName = infobox['imagedark'];
+
+      let logoUrl: string | undefined;
+      let logoDarkUrl: string | undefined;
+
+      if (imageName) {
+        const url = await this.getImageUrl(imageName);
+        if (url) logoUrl = url;
+      }
+
+      if (imageDarkName) {
+        const url = await this.getImageUrl(imageDarkName);
+        if (url) logoDarkUrl = url;
+      }
+
+      return { logoUrl, logoDarkUrl };
+    } catch (error) {
+      this.logger.warn(`Failed to get team logo for ${teamName}: ${error}`);
+      return {};
+    }
+  }
+
+  /**
+   * Get team logos for multiple teams (with rate limiting)
+   */
+  async getTeamLogos(teamNames: string[]): Promise<Map<string, { logoUrl?: string; logoDarkUrl?: string }>> {
+    const logos = new Map<string, { logoUrl?: string; logoDarkUrl?: string }>();
+
+    for (const teamName of teamNames) {
+      this.logger.debug(`Fetching logo for: ${teamName}`);
+      const logo = await this.getTeamLogo(teamName);
+      logos.set(teamName, logo);
+    }
+
+    return logos;
   }
 
   /**
