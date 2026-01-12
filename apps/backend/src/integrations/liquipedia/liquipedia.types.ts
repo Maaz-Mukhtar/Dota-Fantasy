@@ -143,3 +143,58 @@ export interface MatchInfo {
 export interface ParsedInfobox {
   [key: string]: string | undefined;
 }
+
+// ============ Match Stage Types ============
+
+export type TournamentStage = 'group_stage' | 'playoffs';
+
+export type PlayoffRound =
+  | 'upper_bracket_r1'
+  | 'upper_bracket_qf'
+  | 'upper_bracket_sf'
+  | 'upper_bracket_final'
+  | 'lower_bracket_r1'
+  | 'lower_bracket_r2'
+  | 'lower_bracket_r3'
+  | 'lower_bracket_qf'
+  | 'lower_bracket_sf'
+  | 'lower_bracket_final'
+  | 'grand_final'
+  | 'placement'
+  | 'tiebreaker'
+  | 'unknown';
+
+export interface MatchStageInfo {
+  matchId: number;
+  stage: TournamentStage;
+  substage: string; // 'Group A', 'Upper Bracket QF', 'Grand Final', etc.
+  round?: PlayoffRound; // Normalized round identifier
+  pageSource: string; // Which Liquipedia page it came from
+  seriesFormat?: 'bo1' | 'bo2' | 'bo3' | 'bo5';
+  gameNumber?: number; // 1, 2, or 3 within the series
+  team1?: string;
+  team2?: string;
+  date?: string;
+}
+
+export interface SeriesStageInfo {
+  seriesId?: string; // Liquipedia series ID if available
+  stage: TournamentStage;
+  substage: string;
+  round?: PlayoffRound;
+  pageSource: string;
+  seriesFormat: 'bo1' | 'bo2' | 'bo3' | 'bo5';
+  matchIds: number[]; // All match IDs in this series
+  team1?: string;
+  team2?: string;
+  date?: string;
+}
+
+export interface TournamentStageMapping {
+  tournamentPath: string;
+  leagueId?: number;
+  matches: Map<number, MatchStageInfo>;
+  series: SeriesStageInfo[];
+  groupStageMatchCount: number;
+  playoffMatchCount: number;
+}
