@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/auth/presentation/providers/auth_provider.dart';
+import '../../features/tournaments/presentation/screens/tournament_list_screen.dart';
 
 /// Main home screen with bottom navigation
 class HomeScreen extends ConsumerStatefulWidget {
@@ -335,20 +336,13 @@ class _ActionCard extends StatelessWidget {
   }
 }
 
-/// Tournaments tab placeholder
+/// Tournaments tab - uses the TournamentListScreen
 class _TournamentsTab extends StatelessWidget {
   const _TournamentsTab();
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Tournaments'),
-      ),
-      body: const Center(
-        child: Text('Tournaments will be implemented in Slice 2'),
-      ),
-    );
+    return const TournamentListScreen();
   }
 }
 

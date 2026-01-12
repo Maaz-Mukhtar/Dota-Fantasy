@@ -6,6 +6,8 @@ import '../features/auth/presentation/providers/auth_provider.dart';
 import '../features/auth/presentation/screens/login_screen.dart';
 import '../features/auth/presentation/screens/signup_screen.dart';
 import '../features/auth/presentation/screens/profile_screen.dart';
+import '../features/tournaments/presentation/screens/tournament_list_screen.dart';
+import '../features/tournaments/presentation/screens/tournament_detail_screen.dart';
 import '../shared/widgets/home_screen.dart';
 import '../shared/widgets/splash_screen.dart';
 
@@ -75,15 +77,15 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const ProfileScreen(),
       ),
 
-      // Placeholder routes for future slices
+      // Tournament routes
       GoRoute(
         path: '/tournaments',
-        builder: (context, state) => const PlaceholderScreen(title: 'Tournaments'),
+        builder: (context, state) => const TournamentListScreen(),
       ),
       GoRoute(
         path: '/tournaments/:id',
-        builder: (context, state) => PlaceholderScreen(
-          title: 'Tournament ${state.pathParameters['id']}',
+        builder: (context, state) => TournamentDetailScreen(
+          tournamentId: state.pathParameters['id']!,
         ),
       ),
       GoRoute(

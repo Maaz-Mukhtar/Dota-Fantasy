@@ -1,4 +1,4 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { TournamentsService } from './tournaments.service';
 import { Public } from '../auth/decorators/public.decorator';
 
@@ -7,18 +7,26 @@ export class TournamentsController {
   constructor(private tournamentsService: TournamentsService) {}
 
   /**
-   * Get list of tournaments
-   * This endpoint will be fully implemented in Slice 2
+   * Get list of tournaments with optional filters
    */
   @Public()
   @Get()
-  async findAll() {
-    return this.tournamentsService.findAll();
+  async findAll(
+    @Query('status') status?: 'upcoming' | 'ongoing' | 'completed',
+    @Query('tier') tier?: string,
+    @Query('region') region?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.tournamentsService.findAll(
+      { status, tier, region },
+      page ? parseInt(page, 10) : 1,
+      limit ? parseInt(limit, 10) : 20,
+    );
   }
 
   /**
    * Get tournament by ID
-   * This endpoint will be fully implemented in Slice 2
    */
   @Public()
   @Get(':id')
