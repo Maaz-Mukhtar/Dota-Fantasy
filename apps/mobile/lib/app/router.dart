@@ -8,6 +8,8 @@ import '../features/auth/presentation/screens/signup_screen.dart';
 import '../features/auth/presentation/screens/profile_screen.dart';
 import '../features/leagues/presentation/screens/leagues_screen.dart';
 import '../features/leagues/presentation/screens/league_detail_screen.dart';
+import '../features/players/presentation/screens/players_screen.dart';
+import '../features/players/presentation/screens/player_detail_screen.dart';
 import '../features/tournaments/presentation/screens/tournament_list_screen.dart';
 import '../features/tournaments/presentation/screens/tournament_detail_screen.dart';
 import '../shared/widgets/home_screen.dart';
@@ -92,7 +94,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/players',
-        builder: (context, state) => const PlaceholderScreen(title: 'Players'),
+        builder: (context, state) => const PlayersScreen(),
+      ),
+      GoRoute(
+        path: '/players/:id',
+        builder: (context, state) => PlayerDetailScreen(
+          playerId: state.pathParameters['id']!,
+        ),
       ),
       GoRoute(
         path: '/fantasy',

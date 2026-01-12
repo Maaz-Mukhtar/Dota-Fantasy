@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -9,6 +10,9 @@ import '../../../../shared/widgets/loading_indicator.dart';
 import '../../domain/entities/tournament.dart';
 import '../../../teams/domain/entities/team.dart';
 import '../../../matches/domain/entities/match.dart';
+import '../../../players/presentation/providers/player_provider.dart';
+import '../../../players/presentation/widgets/player_card.dart';
+import '../../../players/domain/entities/player.dart';
 import '../providers/tournament_provider.dart';
 
 /// Tournament detail screen with tabbed interface
@@ -32,7 +36,7 @@ class _TournamentDetailScreenState extends ConsumerState<TournamentDetailScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -90,6 +94,7 @@ class _TournamentDetailScreenState extends ConsumerState<TournamentDetailScreen>
                 tabs: const [
                   Tab(text: 'Overview'),
                   Tab(text: 'Teams'),
+                  Tab(text: 'Players'),
                   Tab(text: 'Schedule'),
                 ],
               ),
@@ -103,6 +108,7 @@ class _TournamentDetailScreenState extends ConsumerState<TournamentDetailScreen>
         children: [
           _OverviewTab(tournament: tournament),
           _TeamsTab(tournamentId: widget.tournamentId),
+          _PlayersTab(tournamentId: widget.tournamentId),
           _ScheduleTab(tournamentId: widget.tournamentId),
         ],
       ),
@@ -521,6 +527,127 @@ class _TeamCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Players tab content
+class _PlayersTab extends ConsumerWidget {
+  final String tournamentId;
+
+  const _PlayersTab({required this.tournamentId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final playersState = ref.watch(tournamentPlayersProvider(tournamentId));
+
+    if (playersState.isLoading && playersState.players.isEmpty) {
+      return const LoadingIndicator();
+    }
+
+    if (playersState.error != null && playersState.players.isEmpty) {
+      return app.AppErrorWidget(
+        message: playersState.error!,
+        onRetry: () =>
+            ref.read(tournamentPlayersProvider(tournamentId).notifier).loadPlayers(refresh: true),
+      );
+    }
+
+    if (playersState.players.isEmpty) {
+      return const Center(
+        child: Text('No players registered yet'),
+      );
+    }
+
+    // Group players by role
+    final playersByRole = <PlayerRole, List<Player>>{};
+    final playersWithoutRole = <Player>[];
+
+    for (final player in playersState.players) {
+      if (player.role != null) {
+        playersByRole.putIfAbsent(player.role!, () => []).add(player);
+      } else {
+        playersWithoutRole.add(player);
+      }
+    }
+
+    return RefreshIndicator(
+      onRefresh: () async {
+        await ref.read(tournamentPlayersProvider(tournamentId).notifier).loadPlayers(refresh: true);
+      },
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // Players grouped by role
+          for (final role in PlayerRole.values)
+            if (playersByRole.containsKey(role)) ...[
+              _buildRoleHeader(context, role),
+              ...playersByRole[role]!.map((player) => PlayerCard(
+                    player: player,
+                    compact: true,
+                    showTeam: true,
+                    showFantasyPoints: false,
+                    onTap: () => context.push('/players/${player.id}'),
+                  )),
+              const SizedBox(height: 16),
+            ],
+          // Players without role
+          if (playersWithoutRole.isNotEmpty) ...[
+            _buildRoleHeader(context, null),
+            ...playersWithoutRole.map((player) => PlayerCard(
+                  player: player,
+                  compact: true,
+                  showTeam: true,
+                  showFantasyPoints: false,
+                  onTap: () => context.push('/players/${player.id}'),
+                )),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRoleHeader(BuildContext context, PlayerRole? role) {
+    final color = role != null ? _getRoleColor(role) : Colors.grey;
+    final text = role?.displayName ?? 'Other';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Container(
+            width: 4,
+            height: 20,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            text,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _getRoleColor(PlayerRole role) {
+    switch (role) {
+      case PlayerRole.carry:
+        return Colors.red.shade700;
+      case PlayerRole.mid:
+        return Colors.orange.shade700;
+      case PlayerRole.offlane:
+        return Colors.green.shade700;
+      case PlayerRole.support4:
+        return Colors.blue.shade700;
+      case PlayerRole.support5:
+        return Colors.purple.shade700;
+    }
   }
 }
 
