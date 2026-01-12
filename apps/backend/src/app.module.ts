@@ -11,6 +11,7 @@ import { MatchesModule } from './modules/matches/matches.module';
 import { LeaguesModule } from './modules/leagues/leagues.module';
 import { PlayersModule } from './modules/players/players.module';
 import { SupabaseModule } from './integrations/supabase/supabase.module';
+import { LiquipediaModule } from './integrations/liquipedia/liquipedia.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
@@ -28,6 +29,7 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 
     // Integrations
     SupabaseModule,
+    LiquipediaModule,
 
     // Feature modules
     AuthModule,
