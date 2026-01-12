@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  # Backend API
+  backend:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
+    container_name: dota-fantasy-backend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - STRATZ_API_TOKEN=${STRATZ_API_TOKEN}
+    volumes:
+      - ./apps/backend/src:/app/src
+    networks:
+      - dota-fantasy-network
+    restart: unless-stopped
+
+  # Redis for caching (future use)
+  redis:
+    image: redis:7-alpine
+    container_name: dota-fantasy-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - dota-fantasy-network
+    restart: unless-stopped
+
+networks:
+  dota-fantasy-network:
+    driver: bridge
+
+volumes:
+  redis-data:
