@@ -293,21 +293,19 @@ class _TeamStandingRow extends StatelessWidget {
             child: Row(
               children: [
                 Container(
-                  width: 28,
-                  height: 28,
+                  width: 32,
+                  height: 32,
+                  padding: const EdgeInsets.all(2),
                   decoration: BoxDecoration(
                     color: Theme.of(context).colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: team.logoUrl != null
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: Image.network(
-                            team.logoUrl!,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                _buildLogoPlaceholder(context),
-                          ),
+                      ? Image.network(
+                          team.logoUrl!,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) =>
+                              _buildLogoPlaceholder(context),
                         )
                       : _buildLogoPlaceholder(context),
                 ),

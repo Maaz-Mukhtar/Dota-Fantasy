@@ -45,16 +45,20 @@ class PlayoffBracketTab extends ConsumerWidget {
           },
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: roundedMatches.entries.map((entry) {
-                return _BracketRound(
-                  roundName: entry.key,
-                  matches: entry.value,
-                  isLast: entry.key == roundedMatches.keys.last,
-                );
-              }).toList(),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: roundedMatches.entries.map((entry) {
+                    return _BracketRound(
+                      roundName: entry.key,
+                      matches: entry.value,
+                      isLast: entry.key == roundedMatches.keys.last,
+                    );
+                  }).toList(),
+                ),
+              ),
             ),
           ),
         );
@@ -188,6 +192,7 @@ class _BracketRound extends StatelessWidget {
     return SizedBox(
       width: 200,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           // Round header
@@ -350,21 +355,19 @@ class _TeamRow extends StatelessWidget {
         children: [
           // Team logo
           Container(
-            width: 24,
-            height: 24,
+            width: 28,
+            height: 28,
+            padding: const EdgeInsets.all(2),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(4),
             ),
             child: team?.logoUrl != null
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: Image.network(
-                      team!.logoUrl!,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _buildLogoPlaceholder(context),
-                    ),
+                ? Image.network(
+                    team!.logoUrl!,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) =>
+                        _buildLogoPlaceholder(context),
                   )
                 : _buildLogoPlaceholder(context),
           ),

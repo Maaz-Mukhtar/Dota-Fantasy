@@ -171,10 +171,11 @@ class _TournamentDetailScreenState extends ConsumerState<TournamentDetailScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
                 children: [
                   _buildStatusBadge(context, tournament),
-                  const SizedBox(width: 8),
                   _buildTierBadge(context, tournament),
                 ],
               ),

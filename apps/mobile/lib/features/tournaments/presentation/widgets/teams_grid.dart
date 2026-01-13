@@ -97,21 +97,19 @@ class _TeamGridItem extends StatelessWidget {
             children: [
               // Team logo
               Container(
-                width: 40,
-                height: 40,
+                width: 48,
+                height: 48,
+                padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer,
+                  color: Theme.of(context).colorScheme.surfaceContainerHigh,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: team.logoUrl != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                          team.logoUrl!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              _buildLogoPlaceholder(context),
-                        ),
+                    ? Image.network(
+                        team.logoUrl!,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) =>
+                            _buildLogoPlaceholder(context),
                       )
                     : _buildLogoPlaceholder(context),
               ),
