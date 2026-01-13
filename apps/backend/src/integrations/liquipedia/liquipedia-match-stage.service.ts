@@ -142,13 +142,12 @@ export class LiquipediaMatchStageService {
       this.logger.warn(`Could not fetch Main Event wikitext: ${e}`);
     }
 
-    // 2. If wikitext parsing found no matches, try HTML parsing (LPDB-based tournaments like TI 2025)
-    if (matches.size === 0) {
+    // 2. HTML parsing fallback for LPDB-based pages
+    // Always try Group Stage HTML and compare with wikitext results
+    {
       this.logger.log(
-        'No matches found in wikitext, trying HTML parsing (LPDB fallback)...',
+        `Wikitext found ${groupStageMatchCount} group stage matches, checking HTML for more...`,
       );
-
-      // Parse Group Stage from rendered HTML
       try {
         const groupStageHtml =
           await this.liquipediaService.parsePage(groupStagePath);
@@ -159,34 +158,75 @@ export class LiquipediaMatchStageService {
             groupStagePath,
           );
 
+          // Count how many matches HTML would give us
+          let htmlMatchCount = 0;
           for (const seriesInfo of groupMatches) {
-            series.push(seriesInfo);
-            for (let i = 0; i < seriesInfo.matchIds.length; i++) {
-              const matchId = seriesInfo.matchIds[i];
-              matches.set(matchId, {
-                matchId,
-                stage: 'group_stage',
-                substage: seriesInfo.substage,
-                round: seriesInfo.round,
-                pageSource: groupStagePath,
-                seriesFormat: seriesInfo.seriesFormat,
-                gameNumber: i + 1,
-                team1: seriesInfo.team1,
-                team2: seriesInfo.team2,
-                date: seriesInfo.date,
-              });
-              groupStageMatchCount++;
-            }
+            htmlMatchCount += seriesInfo.matchIds.length;
           }
-          this.logger.log(
-            `HTML: Parsed ${groupStageMatchCount} group stage matches from ${groupMatches.length} series`,
-          );
+
+          // Only use HTML results if it has more matches than wikitext
+          if (htmlMatchCount > groupStageMatchCount) {
+            this.logger.log(
+              `HTML has ${htmlMatchCount} group stage matches vs wikitext ${groupStageMatchCount}, using HTML`,
+            );
+
+            // Remove existing group stage matches from wikitext
+            const wikitextGroupMatchIds: number[] = [];
+            for (const [matchId, info] of matches) {
+              if (info.stage === 'group_stage') {
+                wikitextGroupMatchIds.push(matchId);
+              }
+            }
+            for (const matchId of wikitextGroupMatchIds) {
+              matches.delete(matchId);
+            }
+
+            // Remove existing group stage series
+            const newSeries = series.filter((s) => s.stage !== 'group_stage');
+            series.length = 0;
+            series.push(...newSeries);
+
+            // Reset group count and add HTML results
+            groupStageMatchCount = 0;
+            for (const seriesInfo of groupMatches) {
+              series.push(seriesInfo);
+              for (let i = 0; i < seriesInfo.matchIds.length; i++) {
+                const matchId = seriesInfo.matchIds[i];
+                matches.set(matchId, {
+                  matchId,
+                  stage: 'group_stage',
+                  substage: seriesInfo.substage,
+                  round: seriesInfo.round,
+                  pageSource: groupStagePath,
+                  seriesFormat: seriesInfo.seriesFormat,
+                  gameNumber: i + 1,
+                  team1: seriesInfo.team1,
+                  team2: seriesInfo.team2,
+                  date: seriesInfo.date,
+                });
+                groupStageMatchCount++;
+              }
+            }
+            this.logger.log(
+              `HTML: Parsed ${groupStageMatchCount} group stage matches from ${groupMatches.length} series`,
+            );
+          } else {
+            this.logger.log(
+              `HTML has ${htmlMatchCount} matches, keeping wikitext results (${groupStageMatchCount})`,
+            );
+          }
         }
       } catch (e) {
         this.logger.warn(`Could not fetch Group Stage HTML: ${e}`);
       }
+    }
 
-      // Parse Main Event from rendered HTML
+    // Always try Main Event HTML and compare with wikitext results
+    // Many tournaments have partial data in wikitext but full data in HTML (LPDB)
+    {
+      this.logger.log(
+        `Wikitext found ${playoffMatchCount} playoff matches, checking HTML for more...`,
+      );
       try {
         const mainEventHtml =
           await this.liquipediaService.parsePage(mainEventPath);
@@ -197,28 +237,63 @@ export class LiquipediaMatchStageService {
             mainEventPath,
           );
 
+          // Count how many matches HTML would give us
+          let htmlMatchCount = 0;
           for (const seriesInfo of playoffMatches) {
-            series.push(seriesInfo);
-            for (let i = 0; i < seriesInfo.matchIds.length; i++) {
-              const matchId = seriesInfo.matchIds[i];
-              matches.set(matchId, {
-                matchId,
-                stage: 'playoffs',
-                substage: seriesInfo.substage,
-                round: seriesInfo.round,
-                pageSource: mainEventPath,
-                seriesFormat: seriesInfo.seriesFormat,
-                gameNumber: i + 1,
-                team1: seriesInfo.team1,
-                team2: seriesInfo.team2,
-                date: seriesInfo.date,
-              });
-              playoffMatchCount++;
-            }
+            htmlMatchCount += seriesInfo.matchIds.length;
           }
-          this.logger.log(
-            `HTML: Parsed ${playoffMatchCount} playoff matches from ${playoffMatches.length} series`,
-          );
+
+          // Only use HTML results if it has more matches than wikitext
+          if (htmlMatchCount > playoffMatchCount) {
+            this.logger.log(
+              `HTML has ${htmlMatchCount} playoff matches vs wikitext ${playoffMatchCount}, using HTML`,
+            );
+
+            // Remove existing playoff matches from wikitext
+            const wikitextPlayoffMatchIds: number[] = [];
+            for (const [matchId, info] of matches) {
+              if (info.stage === 'playoffs') {
+                wikitextPlayoffMatchIds.push(matchId);
+              }
+            }
+            for (const matchId of wikitextPlayoffMatchIds) {
+              matches.delete(matchId);
+            }
+
+            // Remove existing playoff series
+            const newSeries = series.filter((s) => s.stage !== 'playoffs');
+            series.length = 0;
+            series.push(...newSeries);
+
+            // Reset playoff count and add HTML results
+            playoffMatchCount = 0;
+            for (const seriesInfo of playoffMatches) {
+              series.push(seriesInfo);
+              for (let i = 0; i < seriesInfo.matchIds.length; i++) {
+                const matchId = seriesInfo.matchIds[i];
+                matches.set(matchId, {
+                  matchId,
+                  stage: 'playoffs',
+                  substage: seriesInfo.substage,
+                  round: seriesInfo.round,
+                  pageSource: mainEventPath,
+                  seriesFormat: seriesInfo.seriesFormat,
+                  gameNumber: i + 1,
+                  team1: seriesInfo.team1,
+                  team2: seriesInfo.team2,
+                  date: seriesInfo.date,
+                });
+                playoffMatchCount++;
+              }
+            }
+            this.logger.log(
+              `HTML: Parsed ${playoffMatchCount} playoff matches from ${playoffMatches.length} series`,
+            );
+          } else {
+            this.logger.log(
+              `HTML has ${htmlMatchCount} matches, keeping wikitext results (${playoffMatchCount})`,
+            );
+          }
         }
       } catch (e) {
         this.logger.warn(`Could not fetch Main Event HTML: ${e}`);
