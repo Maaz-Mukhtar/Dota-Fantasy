@@ -13,6 +13,7 @@ import '../features/players/presentation/screens/player_detail_screen.dart';
 import '../features/tournaments/presentation/screens/tournament_list_screen.dart';
 import '../features/tournaments/presentation/screens/tournament_detail_screen.dart';
 import '../shared/widgets/home_screen.dart';
+import '../shared/widgets/settings_screen.dart';
 import '../shared/widgets/splash_screen.dart';
 
 /// Router provider
@@ -118,7 +119,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/settings',
-        builder: (context, state) => const PlaceholderScreen(title: 'Settings'),
+        builder: (context, state) => const SettingsScreen(),
       ),
     ],
     errorBuilder: (context, state) => ErrorScreen(error: state.error),
