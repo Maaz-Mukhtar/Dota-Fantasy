@@ -146,9 +146,16 @@ export class TournamentImporter {
         this.logger.info('[DRY RUN] Would upsert tournament record');
       }
 
-      // Step 5: Upsert teams
+      // Step 5: Upsert teams (with logos if not skipped)
       if (allParticipants.length > 0) {
-        const teams = allParticipants.map(p => mapTeamToDb(p));
+        let teams = allParticipants.map(p => mapTeamToDb(p));
+
+        // Fetch team logos if not skipped
+        if (!this.options.skipLogos) {
+          this.logger.info('Fetching team logos...');
+          teams = await this.fetchTeamLogos(teams);
+        }
+
         if (!this.options.dryRun) {
           await this.upsertTeams(teams);
           this.logger.success(`Upserted ${teams.length} teams`);
@@ -384,38 +391,64 @@ export class TournamentImporter {
     participants: LiquipediaParticipant[],
   ): Promise<number> {
     try {
-      // Fetch league matches from backend
-      const url = `${this.backendUrl}/api/v1/stratz/league/${leagueId}/matches`;
-      this.logger.debug(`Fetching matches: ${url}`);
+      // Fetch ALL league matches from backend using pagination
+      const allMatches: Array<{
+        matchId: number;
+        radiantTeam?: { id: number; name: string };
+        direTeam?: { id: number; name: string };
+        radiantWin?: boolean;
+        startDateTime?: number;
+        durationSeconds?: number;
+        seriesId?: number;
+      }> = [];
 
-      const response = await fetch(url);
+      const batchSize = 100;
+      let skip = 0;
+      let hasMore = true;
 
-      if (!response.ok) {
-        this.logger.warn(`Failed to fetch matches: ${response.status}`);
-        return 0;
+      while (hasMore) {
+        const url = `${this.backendUrl}/api/v1/stratz/league/${leagueId}/matches?take=${batchSize}&skip=${skip}`;
+        this.logger.debug(`Fetching matches: ${url}`);
+
+        const response = await fetch(url);
+
+        if (!response.ok) {
+          this.logger.warn(`Failed to fetch matches: ${response.status}`);
+          break;
+        }
+
+        const json = await response.json() as {
+          success: boolean;
+          data: Array<{
+            matchId: number;
+            radiantTeam?: { id: number; name: string };
+            direTeam?: { id: number; name: string };
+            radiantWin?: boolean;
+            startDateTime?: number;
+            durationSeconds?: number;
+            seriesId?: number;
+          }>;
+        };
+
+        if (!json.success || !json.data || json.data.length === 0) {
+          hasMore = false;
+          break;
+        }
+
+        allMatches.push(...json.data);
+        this.logger.info(`Fetched ${json.data.length} matches (total: ${allMatches.length})`);
+
+        if (json.data.length < batchSize) {
+          hasMore = false;
+        } else {
+          skip += batchSize;
+          // Small delay between batches to avoid rate limiting
+          await sleep(1000);
+        }
       }
 
-      const json = await response.json() as {
-        success: boolean;
-        data: Array<{
-          id: number;
-          radiantTeamId?: number;
-          direTeamId?: number;
-          didRadiantWin?: boolean;
-          startDateTime?: number;
-          durationSeconds?: number;
-          seriesId?: number;
-          radiantTeam?: { name: string };
-          direTeam?: { name: string };
-        }>;
-      };
-
-      if (!json.success || !json.data) {
-        return 0;
-      }
-
-      const matches = json.data;
-      this.logger.info(`Found ${matches.length} matches from STRATZ`);
+      const matches = allMatches;
+      this.logger.info(`Found ${matches.length} total matches from STRATZ`);
 
       // Build team name to ID mapping
       const teamNameToId = new Map<string, string>();
@@ -435,11 +468,11 @@ export class TournamentImporter {
         const team2Id = team2Name ? this.findTeamId(team2Name, teamNameToId) : undefined;
 
         if (!team1Id || !team2Id) {
-          this.logger.debug(`Skipping match ${match.id} - teams not found`);
+          this.logger.debug(`Skipping match ${match.matchId} - teams not found: ${team1Name} vs ${team2Name}`);
           continue;
         }
 
-        const winnerId = match.didRadiantWin ? team1Id : team2Id;
+        const winnerId = match.radiantWin ? team1Id : team2Id;
         const startTime = match.startDateTime
           ? new Date(match.startDateTime * 1000).toISOString()
           : undefined;
@@ -449,8 +482,8 @@ export class TournamentImporter {
           team1_id: team1Id,
           team2_id: team2Id,
           winner_id: winnerId,
-          team1_score: match.didRadiantWin ? 1 : 0,
-          team2_score: match.didRadiantWin ? 0 : 1,
+          team1_score: match.radiantWin ? 1 : 0,
+          team2_score: match.radiantWin ? 0 : 1,
           started_at: startTime,
           ended_at: startTime,
           status: 'completed',
@@ -486,6 +519,46 @@ export class TournamentImporter {
       this.logger.error('Failed to import matches', error instanceof Error ? error : undefined);
       return 0;
     }
+  }
+
+  /**
+   * Fetch team logos from Liquipedia
+   */
+  private async fetchTeamLogos(teams: DbTeam[]): Promise<DbTeam[]> {
+    const updatedTeams: DbTeam[] = [];
+
+    for (const team of teams) {
+      try {
+        const url = `${this.backendUrl}/api/v1/liquipedia/team-logo/${encodeURIComponent(team.name.replace(/ /g, '_'))}`;
+        this.logger.debug(`Fetching logo for: ${team.name}`);
+
+        const response = await fetch(url);
+
+        if (response.ok) {
+          const json = await response.json() as {
+            success: boolean;
+            data: { logoUrl?: string; logoDarkUrl?: string };
+          };
+
+          if (json.success && json.data?.logoUrl) {
+            team.logo_url = json.data.logoUrl;
+            this.logger.debug(`Found logo for ${team.name}`);
+          }
+        }
+      } catch (error) {
+        this.logger.debug(`Failed to fetch logo for ${team.name}`);
+      }
+
+      updatedTeams.push(team);
+
+      // Small delay to respect rate limits
+      await sleep(500);
+    }
+
+    const logosFound = updatedTeams.filter(t => t.logo_url).length;
+    this.logger.success(`Found logos for ${logosFound}/${teams.length} teams`);
+
+    return updatedTeams;
   }
 
   /**
