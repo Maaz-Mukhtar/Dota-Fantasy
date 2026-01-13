@@ -6,9 +6,10 @@ import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/error_widget.dart' as app;
 import '../../../../shared/widgets/loading_indicator.dart';
 import '../providers/tournament_provider.dart';
-import '../widgets/tournament_card.dart';
+import '../widgets/tournament_list_item.dart';
 
-/// Tournament list screen with filtering tabs
+/// Tournament list screen - Option 1: Continuous List
+/// Clean design with no card separation, subtle dividers only
 class TournamentListScreen extends ConsumerStatefulWidget {
   const TournamentListScreen({super.key});
 
@@ -51,11 +52,13 @@ class _TournamentListScreenState extends ConsumerState<TournamentListScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Tournaments'),
+        elevation: 0,
         bottom: TabBar(
           controller: _tabController,
           tabs: _tabLabels.map((label) => Tab(text: label)).toList(),
           isScrollable: false,
           labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+          indicatorWeight: 3,
         ),
       ),
       body: _buildBody(state),
@@ -87,7 +90,8 @@ class _TournamentListScreenState extends ConsumerState<TournamentListScreen>
     return RefreshIndicator(
       onRefresh: () => ref.read(tournamentListProvider.notifier).loadTournaments(refresh: true),
       child: ListView.builder(
-        padding: const EdgeInsets.all(16),
+        // No padding - items go edge to edge
+        padding: EdgeInsets.zero,
         itemCount: state.tournaments.length + (state.isLoading ? 1 : 0),
         itemBuilder: (context, index) {
           if (index == state.tournaments.length) {
@@ -98,12 +102,12 @@ class _TournamentListScreenState extends ConsumerState<TournamentListScreen>
           }
 
           final tournament = state.tournaments[index];
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: TournamentCard(
-              tournament: tournament,
-              onTap: () => context.push('/tournaments/${tournament.id}'),
-            ),
+          final isLast = index == state.tournaments.length - 1;
+
+          return TournamentListItem(
+            tournament: tournament,
+            showDivider: !isLast,
+            onTap: () => context.push('/tournaments/${tournament.id}'),
           );
         },
       ),
