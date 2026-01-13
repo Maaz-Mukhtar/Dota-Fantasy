@@ -5,64 +5,30 @@ import 'package:go_router/go_router.dart';
 import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/error_widget.dart' as app;
 import '../../../../shared/widgets/loading_indicator.dart';
+import '../../domain/entities/tournament.dart';
 import '../providers/tournament_provider.dart';
-import '../widgets/tournament_card.dart';
+import '../widgets/tournament_grouped_item.dart';
+import '../widgets/tournament_section_header.dart';
 
-/// Tournament list screen with filtering tabs
-class TournamentListScreen extends ConsumerStatefulWidget {
+/// Tournament list screen - Option 2: Grouped Sections
+/// No tabs, single scrollable list with sticky section headers
+class TournamentListScreen extends ConsumerWidget {
   const TournamentListScreen({super.key});
 
   @override
-  ConsumerState<TournamentListScreen> createState() => _TournamentListScreenState();
-}
-
-class _TournamentListScreenState extends ConsumerState<TournamentListScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-
-  final List<String?> _statusFilters = [null, 'ongoing', 'upcoming', 'completed'];
-  final List<String> _tabLabels = ['All', 'Live', 'Upcoming', 'Completed'];
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 4, vsync: this);
-    _tabController.addListener(_onTabChanged);
-  }
-
-  @override
-  void dispose() {
-    _tabController.removeListener(_onTabChanged);
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  void _onTabChanged() {
-    if (!_tabController.indexIsChanging) {
-      final status = _statusFilters[_tabController.index];
-      ref.read(tournamentListProvider.notifier).filterByStatus(status);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(tournamentListProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Tournaments'),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: _tabLabels.map((label) => Tab(text: label)).toList(),
-          isScrollable: false,
-          labelStyle: const TextStyle(fontWeight: FontWeight.bold),
-        ),
+        elevation: 0,
       ),
-      body: _buildBody(state),
+      body: _buildBody(context, ref, state),
     );
   }
 
-  Widget _buildBody(TournamentListState state) {
+  Widget _buildBody(BuildContext context, WidgetRef ref, TournamentListState state) {
     if (state.isLoading && state.tournaments.isEmpty) {
       return const LoadingIndicator();
     }
@@ -78,35 +44,132 @@ class _TournamentListScreenState extends ConsumerState<TournamentListScreen>
       return EmptyState(
         icon: Icons.emoji_events_outlined,
         title: 'No Tournaments',
-        description: 'No tournaments found for the selected filter.',
+        description: 'No tournaments available at the moment.',
         actionLabel: 'Refresh',
         onAction: () => ref.read(tournamentListProvider.notifier).loadTournaments(refresh: true),
       );
     }
 
+    // Group tournaments by status
+    final grouped = _groupTournaments(state.tournaments);
+
     return RefreshIndicator(
       onRefresh: () => ref.read(tournamentListProvider.notifier).loadTournaments(refresh: true),
-      child: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: state.tournaments.length + (state.isLoading ? 1 : 0),
-        itemBuilder: (context, index) {
-          if (index == state.tournaments.length) {
-            return const Padding(
-              padding: EdgeInsets.all(16),
-              child: Center(child: CircularProgressIndicator()),
-            );
-          }
-
-          final tournament = state.tournaments[index];
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: TournamentCard(
-              tournament: tournament,
-              onTap: () => context.push('/tournaments/${tournament.id}'),
+      child: CustomScrollView(
+        slivers: [
+          // Live section
+          if (grouped.live.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: TournamentSectionHeader.live(count: grouped.live.length),
             ),
-          );
-        },
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final tournament = grouped.live[index];
+                  return TournamentGroupedItem(
+                    tournament: tournament,
+                    isLast: index == grouped.live.length - 1,
+                    onTap: () => context.push('/tournaments/${tournament.id}'),
+                  );
+                },
+                childCount: grouped.live.length,
+              ),
+            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 8)),
+          ],
+
+          // Upcoming section
+          if (grouped.upcoming.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: TournamentSectionHeader.upcoming(count: grouped.upcoming.length),
+            ),
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final tournament = grouped.upcoming[index];
+                  return TournamentGroupedItem(
+                    tournament: tournament,
+                    isLast: index == grouped.upcoming.length - 1,
+                    onTap: () => context.push('/tournaments/${tournament.id}'),
+                  );
+                },
+                childCount: grouped.upcoming.length,
+              ),
+            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 8)),
+          ],
+
+          // Completed section
+          if (grouped.completed.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: TournamentSectionHeader.completed(count: grouped.completed.length),
+            ),
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final tournament = grouped.completed[index];
+                  return TournamentGroupedItem(
+                    tournament: tournament,
+                    isLast: index == grouped.completed.length - 1,
+                    onTap: () => context.push('/tournaments/${tournament.id}'),
+                  );
+                },
+                childCount: grouped.completed.length,
+              ),
+            ),
+          ],
+
+          // Bottom padding
+          const SliverToBoxAdapter(child: SizedBox(height: 16)),
+
+          // Loading indicator
+          if (state.isLoading)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            ),
+        ],
       ),
     );
   }
+
+  _GroupedTournaments _groupTournaments(List<Tournament> tournaments) {
+    final live = <Tournament>[];
+    final upcoming = <Tournament>[];
+    final completed = <Tournament>[];
+
+    for (final t in tournaments) {
+      switch (t.status) {
+        case 'ongoing':
+          live.add(t);
+          break;
+        case 'upcoming':
+          upcoming.add(t);
+          break;
+        case 'completed':
+          completed.add(t);
+          break;
+      }
+    }
+
+    return _GroupedTournaments(
+      live: live,
+      upcoming: upcoming,
+      completed: completed,
+    );
+  }
+}
+
+class _GroupedTournaments {
+  final List<Tournament> live;
+  final List<Tournament> upcoming;
+  final List<Tournament> completed;
+
+  _GroupedTournaments({
+    required this.live,
+    required this.upcoming,
+    required this.completed,
+  });
 }
