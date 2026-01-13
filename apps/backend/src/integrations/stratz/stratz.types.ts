@@ -64,8 +64,8 @@ export interface StratzMatch {
     type: number; // 0=Bo1, 1=Bo3, 2=Bo5
     teamOneId?: number;
     teamTwoId?: number;
-    teamOneWins?: number;
-    teamTwoWins?: number;
+    teamOneWinCount?: number;
+    teamTwoWinCount?: number;
   };
   radiantTeam?: StratzTeam;
   direTeam?: StratzTeam;
@@ -139,8 +139,12 @@ export interface StratzPlayerStats {
   };
   runes?: Array<{ rune: number; time: number }>;
   sentryDestroyed?: number;
-  observerWardsPlaced?: number;
-  sentryWardsPlaced?: number;
+  wards?: Array<{
+    type: 'OBSERVER' | 'SENTRY';
+    time?: number;
+    positionX?: number;
+    positionY?: number;
+  }>;
 }
 
 export interface StratzPickBan {
@@ -204,8 +208,8 @@ export interface StratzNode {
   teamTwoId?: number;
   teamOneWins?: number;
   teamTwoWins?: number;
-  winnerId?: number;
-  loserId?: number;
+  winningNodeId?: number;
+  losingNodeId?: number;
   hasStarted?: boolean;
   isCompleted?: boolean;
   scheduledTime?: number;
@@ -215,8 +219,8 @@ export interface StratzNode {
 }
 
 export interface StratzLeagueTable {
-  tableId?: number;
-  teams?: StratzTableTeam[];
+  leagueId?: number;
+  tableTeams?: StratzTableTeam[];
 }
 
 export interface StratzTableTeam {
@@ -313,8 +317,6 @@ export interface PlayerMatchStats {
   heroId: number;
   isWinner: boolean;
   isRadiant: boolean;
-  // Calculated
-  fantasyPoints?: number;
 }
 
 export interface LeagueMatchSummary {

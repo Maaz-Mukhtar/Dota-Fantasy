@@ -69,7 +69,7 @@ export class StratzService {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${this.apiToken}`,
-        'User-Agent': 'Dota2FantasyApp/1.0',
+        'User-Agent': 'STRATZ_API', // Required by STRATZ to avoid Cloudflare block
       },
       body: JSON.stringify({ query, variables }),
     });
@@ -442,10 +442,11 @@ export class StratzService {
     }
   }
 
-  // ============ Fantasy Points Calculation ============
+  // ============ Raw Stats Extraction ============
 
   /**
-   * Extract player stats from a match for fantasy points calculation
+   * Extract raw player stats from a match
+   * Returns stats without fantasy points - use your own scoring system
    */
   extractPlayerStats(
     match: StratzMatch,
@@ -461,10 +462,12 @@ export class StratzService {
       const stunDuration =
         player.stats?.heroDamageReport?.dealtTotal?.stunDuration || 0;
 
-      const obsPlaced = player.stats?.observerWardsPlaced || 0;
+      // Count observer wards placed from wards array
+      const obsPlaced = player.stats?.wards
+        ? player.stats.wards.filter((w) => w.type === 'OBSERVER').length
+        : 0;
 
       // Determine if player got first blood
-      // First blood is usually given to the player with award = 'firstblood'
       const firstBlood = player.award === 'firstblood';
 
       const playerStats: PlayerMatchStats = {
@@ -491,38 +494,10 @@ export class StratzService {
         isRadiant: player.isRadiant,
       };
 
-      // Calculate fantasy points
-      playerStats.fantasyPoints = this.calculateFantasyPoints(playerStats);
-
       stats.push(playerStats);
     }
 
     return stats;
-  }
-
-  /**
-   * Calculate fantasy points for a player's match performance
-   * Based on the scoring rules from plan.md
-   */
-  calculateFantasyPoints(stats: PlayerMatchStats): number {
-    const points = {
-      kills: stats.kills * 0.3,
-      deaths: stats.deaths * -0.3,
-      assists: stats.assists * 0.15,
-      lastHits: stats.lastHits * 0.003,
-      gpm: stats.gpm * 0.002,
-      xpm: stats.xpm * 0.001,
-      towerDamage: stats.towerDamage * 0.001,
-      heroDamage: stats.heroDamage * 0.0001,
-      heroHealing: stats.heroHealing * 0.0002,
-      stuns: stats.stuns * 0.05,
-      obsPlaced: stats.obsPlaced * 0.25,
-      campsStacked: stats.campsStacked * 0.3,
-      firstBlood: stats.firstBlood ? 1.0 : 0,
-      winBonus: stats.isWinner ? 3.0 : 0,
-    };
-
-    return Object.values(points).reduce((a, b) => a + b, 0);
   }
 
   // ============ Helper Methods ============
@@ -574,9 +549,9 @@ export class StratzService {
   }
 
   /**
-   * Get match stats with player fantasy points calculated
+   * Get match stats with extracted player stats
    */
-  async getMatchWithFantasyPoints(matchId: number): Promise<{
+  async getMatchWithPlayerStats(matchId: number): Promise<{
     match: StratzMatch;
     playerStats: PlayerMatchStats[];
   } | null> {

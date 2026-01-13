@@ -19,8 +19,8 @@ query GetMatchStats($matchId: Long!) {
       type
       teamOneId
       teamTwoId
-      teamOneWins
-      teamTwoWins
+      teamOneWinCount
+      teamTwoWinCount
     }
     radiantTeam {
       id
@@ -80,8 +80,9 @@ query GetMatchStats($matchId: Long!) {
             disableDuration
           }
         }
-        observerWardsPlaced
-        sentryWardsPlaced
+        wards {
+          type
+        }
       }
     }
     pickBans {
@@ -95,7 +96,7 @@ query GetMatchStats($matchId: Long!) {
 `;
 
 export const LEAGUE_MATCHES_QUERY = `
-query GetLeagueMatches($leagueId: Int!, $take: Int = 100, $skip: Int = 0) {
+query GetLeagueMatches($leagueId: Int!, $take: Int!, $skip: Int!) {
   league(id: $leagueId) {
     id
     displayName
@@ -104,7 +105,7 @@ query GetLeagueMatches($leagueId: Int!, $take: Int = 100, $skip: Int = 0) {
     startDateTime
     endDateTime
     prizePool
-    matches(request: { take: $take, skip: $skip, orderBy: START_DATE_TIME }) {
+    matches(request: { take: $take, skip: $skip }) {
       id
       didRadiantWin
       durationSeconds
@@ -114,8 +115,8 @@ query GetLeagueMatches($leagueId: Int!, $take: Int = 100, $skip: Int = 0) {
         type
         teamOneId
         teamTwoId
-        teamOneWins
-        teamTwoWins
+        teamOneWinCount
+        teamTwoWinCount
       }
       radiantTeam {
         id
@@ -156,8 +157,8 @@ query GetLeagueInfo($leagueId: Int!) {
         teamTwoId
         teamOneWins
         teamTwoWins
-        winnerId
-        loserId
+        winningNodeId
+        losingNodeId
         hasStarted
         isCompleted
         scheduledTime
@@ -166,20 +167,13 @@ query GetLeagueInfo($leagueId: Int!) {
       }
     }
     tables {
-      tableId
-      teams {
+      leagueId
+      tableTeams {
         teamId
         team {
           id
           name
           tag
-        }
-        standings {
-          matchWins
-          matchLosses
-          gameWins
-          gameLosses
-          points
         }
       }
     }
@@ -388,8 +382,8 @@ query GetSeriesMatches($seriesId: Long!) {
     type
     teamOneId
     teamTwoId
-    teamOneWins
-    teamTwoWins
+    teamOneWinCount
+    teamTwoWinCount
     winningTeamId
     matches {
       id
@@ -428,7 +422,9 @@ query GetSeriesMatches($seriesId: Long!) {
               stunDuration
             }
           }
-          observerWardsPlaced
+          wards {
+            type
+          }
         }
       }
     }
@@ -451,8 +447,8 @@ query GetMultipleMatches($matchIds: [Long!]!) {
     series {
       id
       type
-      teamOneWins
-      teamTwoWins
+      teamOneWinCount
+      teamTwoWinCount
     }
     radiantTeam {
       id
@@ -495,7 +491,9 @@ query GetMultipleMatches($matchIds: [Long!]!) {
             stunDuration
           }
         }
-        observerWardsPlaced
+        wards {
+          type
+        }
       }
     }
   }

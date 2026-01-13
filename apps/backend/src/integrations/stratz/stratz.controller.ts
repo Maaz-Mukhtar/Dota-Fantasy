@@ -30,29 +30,6 @@ export class StratzController {
   }
 
   /**
-   * Get match stats with calculated fantasy points
-   * Example: GET /api/stratz/match/7654321/fantasy
-   */
-  @Public()
-  @Get('match/:matchId/fantasy')
-  async getMatchWithFantasyPoints(@Param('matchId') matchId: string) {
-    const matchIdNum = parseInt(matchId, 10);
-    if (isNaN(matchIdNum)) {
-      throw new Error('Invalid match ID');
-    }
-
-    const result = await this.stratzService.getMatchWithFantasyPoints(matchIdNum);
-    if (!result) {
-      throw new Error('Match not found');
-    }
-
-    return {
-      success: true,
-      data: result,
-    };
-  }
-
-  /**
    * Get all matches for a league
    * Example: GET /api/stratz/league/18324/matches
    */
@@ -346,19 +323,25 @@ export class StratzController {
     const playerStatsMap =
       await this.stratzService.getTournamentPlayerStats(leagueIdNum);
 
-    // Convert map to array for JSON response
+    // Convert map to array for JSON response - raw stats for custom scoring
     const playerStats: Array<{
       steamAccountId: number;
       gamesPlayed: number;
-      totalFantasyPoints: number;
-      averageFantasyPoints: number;
+      wins: number;
       stats: {
         totalKills: number;
         totalDeaths: number;
         totalAssists: number;
+        totalLastHits: number;
+        totalDenies: number;
+        totalHeroDamage: number;
+        totalTowerDamage: number;
+        totalHeroHealing: number;
+        totalStuns: number;
+        totalObsPlaced: number;
+        totalCampsStacked: number;
         avgGpm: number;
         avgXpm: number;
-        wins: number;
       };
     }> = [];
 
@@ -366,10 +349,14 @@ export class StratzController {
       const totalKills = stats.reduce((a, s) => a + s.kills, 0);
       const totalDeaths = stats.reduce((a, s) => a + s.deaths, 0);
       const totalAssists = stats.reduce((a, s) => a + s.assists, 0);
-      const totalFantasyPoints = stats.reduce(
-        (a, s) => a + (s.fantasyPoints || 0),
-        0,
-      );
+      const totalLastHits = stats.reduce((a, s) => a + s.lastHits, 0);
+      const totalDenies = stats.reduce((a, s) => a + s.denies, 0);
+      const totalHeroDamage = stats.reduce((a, s) => a + s.heroDamage, 0);
+      const totalTowerDamage = stats.reduce((a, s) => a + s.towerDamage, 0);
+      const totalHeroHealing = stats.reduce((a, s) => a + s.heroHealing, 0);
+      const totalStuns = stats.reduce((a, s) => a + s.stuns, 0);
+      const totalObsPlaced = stats.reduce((a, s) => a + s.obsPlaced, 0);
+      const totalCampsStacked = stats.reduce((a, s) => a + s.campsStacked, 0);
       const avgGpm = stats.reduce((a, s) => a + s.gpm, 0) / stats.length;
       const avgXpm = stats.reduce((a, s) => a + s.xpm, 0) / stats.length;
       const wins = stats.filter((s) => s.isWinner).length;
@@ -377,21 +364,27 @@ export class StratzController {
       playerStats.push({
         steamAccountId,
         gamesPlayed: stats.length,
-        totalFantasyPoints,
-        averageFantasyPoints: totalFantasyPoints / stats.length,
+        wins,
         stats: {
           totalKills,
           totalDeaths,
           totalAssists,
+          totalLastHits,
+          totalDenies,
+          totalHeroDamage,
+          totalTowerDamage,
+          totalHeroHealing,
+          totalStuns,
+          totalObsPlaced,
+          totalCampsStacked,
           avgGpm,
           avgXpm,
-          wins,
         },
       });
     }
 
-    // Sort by average fantasy points
-    playerStats.sort((a, b) => b.averageFantasyPoints - a.averageFantasyPoints);
+    // Sort by games played (descending)
+    playerStats.sort((a, b) => b.gamesPlayed - a.gamesPlayed);
 
     return {
       success: true,
