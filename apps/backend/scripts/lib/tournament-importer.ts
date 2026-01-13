@@ -454,7 +454,6 @@ export class TournamentImporter {
           started_at: startTime,
           ended_at: startTime,
           status: 'completed',
-          stratz_match_id: match.id,
           updated_at: new Date().toISOString(),
         });
       }

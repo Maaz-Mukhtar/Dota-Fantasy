@@ -224,7 +224,6 @@ export interface LiquipediaTournament {
 export interface DbTournament {
   id: string;
   name: string;
-  description?: string;
   tier: string;
   region?: string;
   status: 'upcoming' | 'ongoing' | 'completed';
@@ -297,9 +296,20 @@ export interface DbMatch {
   best_of?: number;
   status: 'scheduled' | 'live' | 'completed';
   stream_url?: string;
-  stratz_match_id?: number;
   created_at?: string;
   updated_at: string;
+}
+
+/**
+ * Determine tier based on tournament page name and Liquipedia tier
+ */
+function determineTier(pageName: string, liquipediaTier?: string): string {
+  // The International is always "ti" tier
+  if (pageName.toLowerCase().includes('the_international')) {
+    return 'ti';
+  }
+
+  return mapLiquipediaTier(liquipediaTier);
 }
 
 /**
@@ -314,8 +324,7 @@ export function mapTournamentToDb(
   return {
     id: tournamentId,
     name: tournament.name,
-    description: tournament.format,
-    tier: mapLiquipediaTier(tournament.tier),
+    tier: determineTier(tournament.pageName, tournament.tier),
     region: tournament.location?.split(',')[0]?.trim(),
     status: determineTournamentStatus(tournament.startDate, tournament.endDate),
     prize_pool: tournament.prizePoolUsd ?? parsePrizePool(tournament.prizePool),
