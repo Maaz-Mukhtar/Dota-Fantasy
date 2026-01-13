@@ -217,12 +217,23 @@ export class TournamentImporter {
         const leagueId = parseInt(tournament.leagueId, 10);
 
         if (!isNaN(leagueId)) {
-          const matchCount = await this.importMatchesFromStratz(
+          const { matchCount, stratzTeamIdToGroup } = await this.importMatchesFromStratz(
             dbTournament.id,
             leagueId,
             allParticipants,
           );
           result.matchesImported = matchCount;
+
+          // Step 9: Update team group assignments from STRATZ data
+          if (stratzTeamIdToGroup.size > 0 && !this.options.dryRun) {
+            this.logger.section('Updating Team Groups');
+            await this.updateTeamGroupsFromStratz(
+              dbTournament.id,
+              leagueId,
+              allParticipants,
+              stratzTeamIdToGroup,
+            );
+          }
         } else {
           this.logger.warn(`Invalid leagueId: ${tournament.leagueId}`);
         }
@@ -383,14 +394,131 @@ export class TournamentImporter {
   }
 
   /**
+   * Fetch league structure from STRATZ (nodeGroups with stage/round info)
+   */
+  private async fetchLeagueStructure(leagueId: number): Promise<{
+    seriesIdToStage: Map<number, { stage: string; round?: string; bestOf?: number }>;
+    stratzTeamIdToGroup: Map<number, string>;
+  }> {
+    const seriesIdToStage = new Map<number, { stage: string; round?: string; bestOf?: number }>();
+    const stratzTeamIdToGroup = new Map<number, string>();
+
+    try {
+      const url = `${this.backendUrl}/api/v1/stratz/league/${leagueId}`;
+      this.logger.debug(`Fetching league structure: ${url}`);
+
+      const response = await fetch(url);
+      if (!response.ok) return { seriesIdToStage, stratzTeamIdToGroup };
+
+      const json = await response.json() as {
+        success: boolean;
+        data: {
+          nodeGroups?: Array<{
+            id: number;
+            name: string;
+            nodeGroupType: string;
+            nodes?: Array<{
+              id: number;
+              name?: string;
+              nodeType?: string;
+              teamOneId?: number;
+              teamTwoId?: number;
+              seriesId?: number;
+            }>;
+          }>;
+        };
+      };
+
+      if (!json.success || !json.data?.nodeGroups) {
+        return { seriesIdToStage, stratzTeamIdToGroup };
+      }
+
+      // Process each node group
+      for (const nodeGroup of json.data.nodeGroups) {
+        const stageName = this.normalizeStage(nodeGroup.name, nodeGroup.nodeGroupType);
+
+        if (!nodeGroup.nodes) continue;
+
+        let roundCounter = 1;
+        for (const node of nodeGroup.nodes) {
+          // Map seriesId to stage info
+          if (node.seriesId) {
+            const bestOf = this.parseBestOf(node.nodeType);
+            seriesIdToStage.set(node.seriesId, {
+              stage: stageName,
+              round: node.name || this.generateRoundName(nodeGroup, roundCounter),
+              bestOf,
+            });
+          }
+
+          // Map team IDs to groups (for group stages)
+          if (nodeGroup.nodeGroupType === 'ROUND_ROBIN') {
+            if (node.teamOneId) stratzTeamIdToGroup.set(node.teamOneId, nodeGroup.name);
+            if (node.teamTwoId) stratzTeamIdToGroup.set(node.teamTwoId, nodeGroup.name);
+          }
+
+          roundCounter++;
+        }
+      }
+
+      this.logger.info(`Loaded structure: ${seriesIdToStage.size} series, ${stratzTeamIdToGroup.size} team-group mappings`);
+
+    } catch (error) {
+      this.logger.debug('Failed to fetch league structure');
+    }
+
+    return { seriesIdToStage, stratzTeamIdToGroup };
+  }
+
+  /**
+   * Normalize stage name from nodeGroup
+   */
+  private normalizeStage(name: string, nodeGroupType: string): string {
+    if (name.startsWith('Group')) return 'Group Stage';
+    if (name === 'Playoff' || nodeGroupType.includes('BRACKET')) return 'Playoffs';
+    if (name === 'Placement') return 'Playoffs';
+    return name;
+  }
+
+  /**
+   * Generate round name based on node group and position
+   */
+  private generateRoundName(nodeGroup: { name: string; nodeGroupType: string }, position: number): string {
+    if (nodeGroup.nodeGroupType === 'ROUND_ROBIN') {
+      return `Round ${Math.ceil(position / 5)}`; // Approximate round
+    }
+    if (nodeGroup.name === 'Playoff' || nodeGroup.nodeGroupType.includes('BRACKET')) {
+      // For playoffs, try to infer round from position
+      // This is approximate - real bracket position would be better
+      return '';
+    }
+    return '';
+  }
+
+  /**
+   * Parse best_of from node type
+   */
+  private parseBestOf(nodeType?: string): number | undefined {
+    if (!nodeType) return undefined;
+    if (nodeType.includes('ONE')) return 1;
+    if (nodeType.includes('TWO')) return 2;
+    if (nodeType.includes('THREE')) return 3;
+    if (nodeType.includes('FIVE')) return 5;
+    return undefined;
+  }
+
+  /**
    * Import matches from STRATZ
    */
   private async importMatchesFromStratz(
     tournamentId: string,
     leagueId: number,
     participants: LiquipediaParticipant[],
-  ): Promise<number> {
+  ): Promise<{ matchCount: number; stratzTeamIdToGroup: Map<number, string> }> {
     try {
+      // First fetch league structure for stage/round mapping
+      const { seriesIdToStage, stratzTeamIdToGroup } = await this.fetchLeagueStructure(leagueId);
+
       // Fetch ALL league matches from backend using pagination
       const allMatches: Array<{
         matchId: number;
@@ -450,8 +578,9 @@ export class TournamentImporter {
       const matches = allMatches;
       this.logger.info(`Found ${matches.length} total matches from STRATZ`);
 
-      // Build team name to ID mapping
+      // Build team name to ID mapping (and STRATZ ID mapping)
       const teamNameToId = new Map<string, string>();
+      const stratzTeamIdToDbId = new Map<number, string>();
       participants.forEach(p => {
         teamNameToId.set(p.teamName.toLowerCase(), generateTeamId(p.teamName));
       });
@@ -472,10 +601,21 @@ export class TournamentImporter {
           continue;
         }
 
+        // Map STRATZ team IDs to DB IDs for group assignment
+        if (match.radiantTeam?.id && team1Id) {
+          stratzTeamIdToDbId.set(match.radiantTeam.id, team1Id);
+        }
+        if (match.direTeam?.id && team2Id) {
+          stratzTeamIdToDbId.set(match.direTeam.id, team2Id);
+        }
+
         const winnerId = match.radiantWin ? team1Id : team2Id;
         const startTime = match.startDateTime
           ? new Date(match.startDateTime * 1000).toISOString()
           : undefined;
+
+        // Get stage/round info from seriesId
+        const stageInfo = match.seriesId ? seriesIdToStage.get(match.seriesId) : undefined;
 
         dbMatches.push({
           tournament_id: tournamentId,
@@ -486,10 +626,21 @@ export class TournamentImporter {
           team2_score: match.radiantWin ? 0 : 1,
           started_at: startTime,
           ended_at: startTime,
+          stage: stageInfo?.stage,
+          round: stageInfo?.round,
+          best_of: stageInfo?.bestOf,
           status: 'completed',
           updated_at: new Date().toISOString(),
         });
       }
+
+      // Log stage distribution
+      const stageCount = new Map<string, number>();
+      dbMatches.forEach(m => {
+        const stage = m.stage || 'Unknown';
+        stageCount.set(stage, (stageCount.get(stage) || 0) + 1);
+      });
+      this.logger.info(`Match stages: ${Array.from(stageCount.entries()).map(([s, c]) => `${s}=${c}`).join(', ')}`);
 
       if (dbMatches.length > 0 && !this.options.dryRun) {
         // Delete existing matches
@@ -505,7 +656,7 @@ export class TournamentImporter {
 
         if (error) {
           this.logger.error(`Failed to insert matches: ${error.message}`);
-          return 0;
+          return { matchCount: 0, stratzTeamIdToGroup };
         }
 
         this.logger.success(`Imported ${dbMatches.length} matches`);
@@ -513,11 +664,77 @@ export class TournamentImporter {
         this.logger.info(`[DRY RUN] Would import ${dbMatches.length} matches`);
       }
 
-      return dbMatches.length;
+      return { matchCount: dbMatches.length, stratzTeamIdToGroup };
 
     } catch (error) {
       this.logger.error('Failed to import matches', error instanceof Error ? error : undefined);
-      return 0;
+      return { matchCount: 0, stratzTeamIdToGroup: new Map() };
+    }
+  }
+
+  /**
+   * Update tournament teams with group assignments from STRATZ
+   */
+  private async updateTeamGroupsFromStratz(
+    tournamentId: string,
+    leagueId: number,
+    participants: LiquipediaParticipant[],
+    stratzTeamIdToGroup: Map<number, string>,
+  ): Promise<void> {
+    if (stratzTeamIdToGroup.size === 0) return;
+
+    // Build map of team name to STRATZ team ID (from match data)
+    // We need to fetch one batch of matches to get this mapping
+    const url = `${this.backendUrl}/api/v1/stratz/league/${leagueId}/matches?take=100`;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) return;
+
+      const json = await response.json() as {
+        success: boolean;
+        data: Array<{
+          radiantTeam?: { id: number; name: string };
+          direTeam?: { id: number; name: string };
+        }>;
+      };
+
+      if (!json.success || !json.data) return;
+
+      // Build team name to STRATZ ID mapping
+      const teamNameToStratzId = new Map<string, number>();
+      for (const match of json.data) {
+        if (match.radiantTeam) {
+          teamNameToStratzId.set(this.normalizeTeamName(match.radiantTeam.name), match.radiantTeam.id);
+        }
+        if (match.direTeam) {
+          teamNameToStratzId.set(this.normalizeTeamName(match.direTeam.name), match.direTeam.id);
+        }
+      }
+
+      // Update each team's group
+      let groupsUpdated = 0;
+      for (const participant of participants) {
+        const normalizedName = this.normalizeTeamName(participant.teamName);
+        const stratzId = teamNameToStratzId.get(normalizedName);
+
+        if (stratzId && stratzTeamIdToGroup.has(stratzId)) {
+          const groupName = stratzTeamIdToGroup.get(stratzId)!;
+          const teamId = generateTeamId(participant.teamName);
+
+          const { error } = await this.supabase
+            .from('tournament_teams')
+            .update({ group_name: groupName })
+            .eq('tournament_id', tournamentId)
+            .eq('team_id', teamId);
+
+          if (!error) groupsUpdated++;
+        }
+      }
+
+      this.logger.success(`Updated ${groupsUpdated} team group assignments`);
+
+    } catch (error) {
+      this.logger.debug('Failed to update team groups');
     }
   }
 
