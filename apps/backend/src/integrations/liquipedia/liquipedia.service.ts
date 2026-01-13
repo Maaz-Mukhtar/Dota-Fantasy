@@ -761,6 +761,181 @@ export class LiquipediaService {
   }
 
   /**
+   * Get all images used on a page
+   */
+  async getPageImages(pageName: string): Promise<string[]> {
+    try {
+      const response = await this.makeRequest(
+        {
+          action: 'parse',
+          page: pageName,
+          prop: 'images',
+          format: 'json',
+        },
+        true, // Parse action has stricter rate limits
+      );
+
+      return (response.parse as any)?.images || [];
+    } catch (error) {
+      this.logger.warn(`Failed to get images for page ${pageName}: ${error}`);
+      return [];
+    }
+  }
+
+  /**
+   * Get tournament logo URL from Liquipedia
+   * Looks for images with patterns like:
+   * - Tournament_Name_padded_allmode.png (for TI)
+   * - Tournament_Name_lightmode.png / Tournament_Name_darkmode.png
+   * - Tournament_Name_allmode.png
+   * - Tournament_Name.png (simple format)
+   */
+  async getTournamentLogo(pageName: string): Promise<{ logoUrl?: string; logoDarkUrl?: string }> {
+    try {
+      const images = await this.getPageImages(pageName);
+
+      if (!images.length) {
+        this.logger.debug(`No images found for tournament: ${pageName}`);
+        return {};
+      }
+
+      this.logger.debug(`Found ${images.length} images for ${pageName}`);
+
+      // Build tournament name pattern from page name
+      // e.g., "The_International/2025" -> "The_International_2025"
+      const tournamentNamePattern = pageName.replace(/\//g, '_');
+
+      // Known team name patterns to exclude
+      const teamPatterns = [
+        /^team_/i,
+        /_team_/i,
+        /^aurora_gaming/i,
+        /^betboom_team/i,
+        /^heroic/i,
+        /^nigma/i,
+        /^tundra/i,
+        /^xtreme_gaming/i,
+        /^parivision/i,
+        /^gaimin/i,
+        /^falcons/i,
+        /_esports_/i,
+        /_gaming_/i,
+        /^og_/i,
+        /^eg_/i,
+        /^liquid_/i,
+        /^secret_/i,
+        /^spirit_/i,
+        /_Brothers_/i,
+        /^Yakutou/i,
+        /^g2\./i,
+        /^cloud9/i,
+        /^nouns/i,
+        /^1win/i,
+        /^talon/i,
+        /^beastcoast/i,
+        /^gladiators/i,
+      ];
+
+      // Filter out non-tournament images
+      const isTeamLogo = (img: string) => teamPatterns.some(p => p.test(img));
+      const isUtilityImage = (img: string) => {
+        const lower = img.toLowerCase();
+        return lower.includes('_hd.png') ||
+               lower.includes('icon_dota2') ||
+               lower.includes('gold.png') ||
+               lower.includes('silver.png') ||
+               lower.includes('bronze.png') ||
+               lower.includes('copper.png') ||
+               lower.includes('vod-') ||
+               lower.includes('valve_logo') ||
+               lower.includes('aegis_') ||
+               lower.endsWith('_win_') ||
+               lower.includes('_win_the_');
+      };
+
+      // Find exact tournament name match first (highest priority)
+      // e.g., "The_International_2025.png"
+      const exactMatch = images.find(img =>
+        img.toLowerCase() === `${tournamentNamePattern.toLowerCase()}.png`
+      );
+
+      if (exactMatch) {
+        const url = await this.getImageUrl(exactMatch);
+        if (url) {
+          this.logger.debug(`Found exact match logo: ${exactMatch}`);
+          return { logoUrl: url };
+        }
+      }
+
+      // Extract series name (e.g., "DreamLeague" from "DreamLeague/Season_22")
+      const seriesName = pageName.split('/')[0];
+      const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+      // Priority patterns to search for tournament logos
+      const lightPatterns = [
+        // Exact tournament name match
+        new RegExp(`^${escapeRegex(tournamentNamePattern)}_padded_allmode\\.png$`, 'i'),
+        new RegExp(`^${escapeRegex(tournamentNamePattern)}_allmode\\.png$`, 'i'),
+        new RegExp(`^${escapeRegex(tournamentNamePattern)}_lightmode\\.png$`, 'i'),
+        // Series name match (e.g., DreamLeague_2023_lightmode.png)
+        new RegExp(`^${escapeRegex(seriesName)}_\\d{4}_lightmode\\.png$`, 'i'),
+        new RegExp(`^${escapeRegex(seriesName)}_\\d{4}_allmode\\.png$`, 'i'),
+        // General series name match
+        new RegExp(`^${escapeRegex(seriesName)}.*_lightmode\\.png$`, 'i'),
+        new RegExp(`^${escapeRegex(seriesName)}.*_padded_allmode\\.png$`, 'i'),
+      ];
+
+      // Dark patterns - only match tournament-specific dark logos
+      const darkPatterns = [
+        new RegExp(`^${escapeRegex(tournamentNamePattern)}_darkmode\\.png$`, 'i'),
+        new RegExp(`^${escapeRegex(seriesName)}_\\d{4}_darkmode\\.png$`, 'i'),
+        new RegExp(`^${escapeRegex(seriesName)}.*_darkmode\\.png$`, 'i'),
+      ];
+
+      // Filter tournament images (exclude teams and utility images)
+      const tournamentImages = images.filter(img =>
+        !isTeamLogo(img) && !isUtilityImage(img) && img.endsWith('.png')
+      );
+
+      this.logger.debug(`Filtered tournament images: ${tournamentImages.slice(0, 8).join(', ')}`);
+
+      let lightLogo: string | undefined;
+      let darkLogo: string | undefined;
+
+      // Find light mode logo
+      for (const pattern of lightPatterns) {
+        const match = tournamentImages.find(img => pattern.test(img));
+        if (match) {
+          const url = await this.getImageUrl(match);
+          if (url) {
+            lightLogo = url;
+            this.logger.debug(`Found light logo: ${match}`);
+            break;
+          }
+        }
+      }
+
+      // Find dark mode logo
+      for (const pattern of darkPatterns) {
+        const match = tournamentImages.find(img => pattern.test(img));
+        if (match) {
+          const url = await this.getImageUrl(match);
+          if (url) {
+            darkLogo = url;
+            this.logger.debug(`Found dark logo: ${match}`);
+            break;
+          }
+        }
+      }
+
+      return { logoUrl: lightLogo, logoDarkUrl: darkLogo };
+    } catch (error) {
+      this.logger.warn(`Failed to get tournament logo for ${pageName}: ${error}`);
+      return {};
+    }
+  }
+
+  /**
    * Get list of pages in a category
    */
   async getCategoryMembers(category: string, limit = 50): Promise<string[]> {

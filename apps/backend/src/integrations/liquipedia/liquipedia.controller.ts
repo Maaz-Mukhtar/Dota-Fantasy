@@ -121,6 +121,19 @@ export class LiquipediaController {
   }
 
   /**
+   * Get tournament logo URLs
+   * Example: GET /api/liquipedia/tournament-logo/The_International/2024
+   * Example: GET /api/liquipedia/tournament-logo/Riyadh_Masters/2024
+   */
+  @Public()
+  @Get('tournament-logo/:pageName(*)')
+  async getTournamentLogo(
+    @Param('pageName') pageName: string,
+  ): Promise<{ logoUrl?: string; logoDarkUrl?: string }> {
+    return this.liquipediaService.getTournamentLogo(pageName);
+  }
+
+  /**
    * Get The International with full data including team logos
    * Example: GET /api/liquipedia/ti-full-logos/2025
    * Note: This is slower due to fetching logos for each team (rate limited)
