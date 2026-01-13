@@ -711,11 +711,11 @@ export class TournamentImporter {
         }
       }
 
-      // Update each team's group
+      // Update each team's group using fuzzy matching
       let groupsUpdated = 0;
       for (const participant of participants) {
-        const normalizedName = this.normalizeTeamName(participant.teamName);
-        const stratzId = teamNameToStratzId.get(normalizedName);
+        // Use fuzzy matching to find STRATZ team ID
+        const stratzId = this.findStratzTeamId(participant.teamName, teamNameToStratzId);
 
         if (stratzId && stratzTeamIdToGroup.has(stratzId)) {
           const groupName = stratzTeamIdToGroup.get(stratzId)!;
@@ -727,7 +727,12 @@ export class TournamentImporter {
             .eq('tournament_id', tournamentId)
             .eq('team_id', teamId);
 
-          if (!error) groupsUpdated++;
+          if (!error) {
+            groupsUpdated++;
+            this.logger.debug(`${participant.teamName} -> ${groupName}`);
+          }
+        } else {
+          this.logger.debug(`No group found for: ${participant.teamName}`);
         }
       }
 
@@ -788,6 +793,40 @@ export class TournamentImporter {
       .replace(/[.\-_]/g, ' ')  // Replace dots, dashes, underscores with spaces
       .replace(/\s+/g, ' ')     // Collapse multiple spaces
       .trim();
+  }
+
+  /**
+   * Find STRATZ team ID using fuzzy matching
+   * Similar to findTeamId but returns STRATZ ID instead of DB ID
+   */
+  private findStratzTeamId(teamName: string, teamNameToStratzId: Map<string, number>): number | undefined {
+    const normalized = this.normalizeTeamName(teamName);
+
+    // Exact match first
+    if (teamNameToStratzId.has(normalized)) {
+      return teamNameToStratzId.get(normalized);
+    }
+
+    // Substring match
+    for (const [stratzName, stratzId] of teamNameToStratzId.entries()) {
+      if (stratzName.includes(normalized) || normalized.includes(stratzName)) {
+        return stratzId;
+      }
+    }
+
+    // Word-based matching
+    const inputWords = normalized.split(' ').filter(w => w.length > 2);
+    for (const [stratzName, stratzId] of teamNameToStratzId.entries()) {
+      const nameWords = stratzName.split(' ').filter(w => w.length > 2);
+      const matchingWords = inputWords.filter(w =>
+        nameWords.some(nw => nw === w || nw.includes(w) || w.includes(nw))
+      );
+      if (matchingWords.length >= Math.max(1, inputWords.length / 2)) {
+        return stratzId;
+      }
+    }
+
+    return undefined;
   }
 
   /**
