@@ -562,6 +562,18 @@ export class TournamentImporter {
   }
 
   /**
+   * Normalize team name for matching
+   * Handles variations like "PSG.Quest" vs "PSG Quest" vs "PSG_Quest"
+   */
+  private normalizeTeamName(name: string): string {
+    return name
+      .toLowerCase()
+      .replace(/[.\-_]/g, ' ')  // Replace dots, dashes, underscores with spaces
+      .replace(/\s+/g, ' ')     // Collapse multiple spaces
+      .trim();
+  }
+
+  /**
    * Find team ID with fuzzy matching
    */
   private findTeamId(teamName: string, teamNameToId: Map<string, string>): string | undefined {
@@ -570,11 +582,43 @@ export class TournamentImporter {
       return teamNameToId.get(teamName);
     }
 
-    // Try fuzzy match
+    // Normalize the incoming team name
+    const normalizedInput = this.normalizeTeamName(teamName);
+
+    // Try normalized match
     const entries = Array.from(teamNameToId.entries());
     for (const [name, id] of entries) {
-      if (name.includes(teamName) || teamName.includes(name)) {
+      const normalizedName = this.normalizeTeamName(name);
+
+      // Exact normalized match
+      if (normalizedName === normalizedInput) {
         return id;
+      }
+
+      // Substring match (both directions)
+      if (normalizedName.includes(normalizedInput) || normalizedInput.includes(normalizedName)) {
+        return id;
+      }
+    }
+
+    // Try word-based matching for abbreviated names
+    const inputWords = normalizedInput.split(' ').filter(w => w.length > 0);
+    for (const [name, id] of entries) {
+      const nameWords = this.normalizeTeamName(name).split(' ').filter(w => w.length > 0);
+
+      // Check if key words match (handles "Team Spirit" vs "Spirit")
+      const significantInputWords = inputWords.filter(w => w.length > 2);
+      const significantNameWords = nameWords.filter(w => w.length > 2);
+
+      if (significantInputWords.length > 0 && significantNameWords.length > 0) {
+        const matchingWords = significantInputWords.filter(w =>
+          significantNameWords.some(nw => nw === w || nw.includes(w) || w.includes(nw))
+        );
+
+        // If at least half the significant words match, consider it a match
+        if (matchingWords.length >= Math.max(1, significantInputWords.length / 2)) {
+          return id;
+        }
       }
     }
 
