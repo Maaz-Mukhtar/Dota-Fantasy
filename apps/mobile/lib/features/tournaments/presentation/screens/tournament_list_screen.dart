@@ -6,9 +6,10 @@ import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/error_widget.dart' as app;
 import '../../../../shared/widgets/loading_indicator.dart';
 import '../providers/tournament_provider.dart';
-import '../widgets/tournament_card.dart';
+import '../widgets/tournament_compact_tile.dart';
 
-/// Tournament list screen with filtering tabs
+/// Tournament list screen - Option 3: Compact Tiles
+/// Tight spacing, no card shadows, tier accent bar on left
 class TournamentListScreen extends ConsumerStatefulWidget {
   const TournamentListScreen({super.key});
 
@@ -47,15 +48,36 @@ class _TournamentListScreenState extends ConsumerState<TournamentListScreen>
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(tournamentListProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Tournaments'),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: _tabLabels.map((label) => Tab(text: label)).toList(),
-          isScrollable: false,
-          labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+        elevation: 0,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(48),
+          child: Container(
+            decoration: BoxDecoration(
+              color: isDark ? Colors.grey[900] : Colors.grey[50],
+              border: Border(
+                bottom: BorderSide(
+                  color: isDark ? Colors.grey[800]! : Colors.grey[300]!,
+                  width: 1,
+                ),
+              ),
+            ),
+            child: TabBar(
+              controller: _tabController,
+              tabs: _tabLabels.map((label) => Tab(text: label)).toList(),
+              isScrollable: false,
+              labelStyle: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+              indicatorWeight: 3,
+              indicatorSize: TabBarIndicatorSize.label,
+            ),
+          ),
         ),
       ),
       body: _buildBody(state),
@@ -87,7 +109,8 @@ class _TournamentListScreenState extends ConsumerState<TournamentListScreen>
     return RefreshIndicator(
       onRefresh: () => ref.read(tournamentListProvider.notifier).loadTournaments(refresh: true),
       child: ListView.builder(
-        padding: const EdgeInsets.all(16),
+        // No padding - tiles go edge to edge
+        padding: EdgeInsets.zero,
         itemCount: state.tournaments.length + (state.isLoading ? 1 : 0),
         itemBuilder: (context, index) {
           if (index == state.tournaments.length) {
@@ -98,12 +121,9 @@ class _TournamentListScreenState extends ConsumerState<TournamentListScreen>
           }
 
           final tournament = state.tournaments[index];
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: TournamentCard(
-              tournament: tournament,
-              onTap: () => context.push('/tournaments/${tournament.id}'),
-            ),
+          return TournamentCompactTile(
+            tournament: tournament,
+            onTap: () => context.push('/tournaments/${tournament.id}'),
           );
         },
       ),
