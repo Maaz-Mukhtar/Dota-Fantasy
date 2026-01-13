@@ -12,6 +12,9 @@ import '../features/players/presentation/screens/players_screen.dart';
 import '../features/players/presentation/screens/player_detail_screen.dart';
 import '../features/tournaments/presentation/screens/tournament_list_screen.dart';
 import '../features/tournaments/presentation/screens/tournament_detail_screen.dart';
+import '../features/tournaments/presentation/screens/tournament_info_screen.dart';
+import '../features/tournaments/presentation/screens/tournament_players_screen.dart';
+import '../features/tournaments/presentation/screens/tournament_schedule_screen.dart';
 import '../shared/widgets/home_screen.dart';
 import '../shared/widgets/splash_screen.dart';
 
@@ -89,6 +92,24 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/tournaments/:id',
         builder: (context, state) => TournamentDetailScreen(
+          tournamentId: state.pathParameters['id']!,
+        ),
+      ),
+      GoRoute(
+        path: '/tournaments/:id/info',
+        builder: (context, state) => TournamentInfoScreen(
+          tournamentId: state.pathParameters['id']!,
+        ),
+      ),
+      GoRoute(
+        path: '/tournaments/:id/players',
+        builder: (context, state) => TournamentPlayersScreen(
+          tournamentId: state.pathParameters['id']!,
+        ),
+      ),
+      GoRoute(
+        path: '/tournaments/:id/schedule',
+        builder: (context, state) => TournamentScheduleScreen(
           tournamentId: state.pathParameters['id']!,
         ),
       ),

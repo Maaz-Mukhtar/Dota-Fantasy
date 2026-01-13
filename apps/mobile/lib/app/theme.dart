@@ -10,7 +10,8 @@ class AppTheme {
   static const Color accentColor = Color(0xFFFFD600); // Gold for highlights
 
   // Tier Colors
-  static const Color tierGold = Color(0xFFFFD700); // TI/Major
+  static const Color tierTI = Color(0xFF9C27B0); // TI (Purple)
+  static const Color tierGold = Color(0xFFFFD700); // Major
   static const Color tierSilver = Color(0xFFC0C0C0); // Tier 1
   static const Color tierBronze = Color(0xFFCD7F32); // Tier 2
 

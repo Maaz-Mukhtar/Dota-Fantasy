@@ -1,21 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../app/theme.dart';
 import '../../../../shared/widgets/error_widget.dart' as app;
 import '../../../../shared/widgets/loading_indicator.dart';
 import '../../domain/entities/tournament.dart';
 import '../../../teams/domain/entities/team.dart';
-import '../../../matches/domain/entities/match.dart';
-import '../../../players/presentation/providers/player_provider.dart';
-import '../../../players/presentation/widgets/player_card.dart';
-import '../../../players/domain/entities/player.dart';
 import '../providers/tournament_provider.dart';
+import '../widgets/teams_grid.dart';
+import '../widgets/group_standings.dart';
+import '../widgets/playoff_bracket.dart';
+import '../widgets/team_roster_sheet.dart';
 
-/// Tournament detail screen with tabbed interface
+/// Tournament detail screen with redesigned layout
+/// Main view: Teams Grid
+/// Tabs: Group Stage (standings) and Playoffs (bracket)
+/// Overflow menu: Tournament Info, Players, Schedule
 class TournamentDetailScreen extends ConsumerStatefulWidget {
   final String tournamentId;
 
@@ -36,7 +37,7 @@ class _TournamentDetailScreenState extends ConsumerState<TournamentDetailScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
   }
 
   @override
@@ -73,9 +74,41 @@ class _TournamentDetailScreenState extends ConsumerState<TournamentDetailScreen>
       headerSliverBuilder: (context, innerBoxIsScrolled) {
         return [
           SliverAppBar(
-            expandedHeight: 200,
+            expandedHeight: 160,
             floating: false,
             pinned: true,
+            actions: [
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert),
+                onSelected: (value) => _handleMenuAction(context, value),
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'info',
+                    child: ListTile(
+                      leading: Icon(Icons.info_outline),
+                      title: Text('Tournament Info'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'players',
+                    child: ListTile(
+                      leading: Icon(Icons.people),
+                      title: Text('Players'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'schedule',
+                    child: ListTile(
+                      leading: Icon(Icons.schedule),
+                      title: Text('Schedule'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
+              ),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               title: Text(
                 tournament.name,
@@ -87,15 +120,21 @@ class _TournamentDetailScreenState extends ConsumerState<TournamentDetailScreen>
               background: _buildHeaderBackground(context, tournament),
             ),
           ),
+          // Teams Grid Section
+          SliverToBoxAdapter(
+            child: _TeamsGridSection(
+              tournamentId: widget.tournamentId,
+              onTeamTap: (team) => _showTeamRoster(context, team),
+            ),
+          ),
+          // Tab Bar
           SliverPersistentHeader(
             delegate: _SliverTabBarDelegate(
               TabBar(
                 controller: _tabController,
                 tabs: const [
-                  Tab(text: 'Overview'),
-                  Tab(text: 'Teams'),
-                  Tab(text: 'Players'),
-                  Tab(text: 'Schedule'),
+                  Tab(text: 'Group Stage'),
+                  Tab(text: 'Playoffs'),
                 ],
               ),
             ),
@@ -106,10 +145,8 @@ class _TournamentDetailScreenState extends ConsumerState<TournamentDetailScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _OverviewTab(tournament: tournament),
-          _TeamsTab(tournamentId: widget.tournamentId),
-          _PlayersTab(tournamentId: widget.tournamentId),
-          _ScheduleTab(tournamentId: widget.tournamentId),
+          GroupStandingsTab(tournamentId: widget.tournamentId),
+          PlayoffBracketTab(tournamentId: widget.tournamentId),
         ],
       ),
     );
@@ -134,9 +171,22 @@ class _TournamentDetailScreenState extends ConsumerState<TournamentDetailScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _buildStatusBadge(context, tournament),
+              Row(
+                children: [
+                  _buildStatusBadge(context, tournament),
+                  const SizedBox(width: 8),
+                  _buildTierBadge(context, tournament),
+                ],
+              ),
               const SizedBox(height: 8),
-              _buildTierBadge(context, tournament),
+              Text(
+                tournament.formattedPrizePool,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white.withOpacity(0.9),
+                ),
+              ),
             ],
           ),
         ),
@@ -151,7 +201,7 @@ class _TournamentDetailScreenState extends ConsumerState<TournamentDetailScreen>
     switch (tournament.status) {
       case 'ongoing':
         statusColor = AppTheme.statusLive;
-        statusText = 'LIVE NOW';
+        statusText = 'LIVE';
         break;
       case 'upcoming':
         statusColor = AppTheme.statusUpcoming;
@@ -167,7 +217,7 @@ class _TournamentDetailScreenState extends ConsumerState<TournamentDetailScreen>
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: statusColor,
         borderRadius: BorderRadius.circular(4),
@@ -175,7 +225,7 @@ class _TournamentDetailScreenState extends ConsumerState<TournamentDetailScreen>
       child: Text(
         statusText,
         style: const TextStyle(
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: FontWeight.bold,
           color: Colors.white,
         ),
@@ -187,6 +237,8 @@ class _TournamentDetailScreenState extends ConsumerState<TournamentDetailScreen>
     Color badgeColor;
     switch (tournament.tier.toLowerCase()) {
       case 'ti':
+        badgeColor = AppTheme.tierTI;
+        break;
       case 'major':
         badgeColor = AppTheme.tierGold;
         break;
@@ -201,7 +253,7 @@ class _TournamentDetailScreenState extends ConsumerState<TournamentDetailScreen>
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: badgeColor.withOpacity(0.3),
         borderRadius: BorderRadius.circular(4),
@@ -210,10 +262,36 @@ class _TournamentDetailScreenState extends ConsumerState<TournamentDetailScreen>
       child: Text(
         tournament.tierDisplayName,
         style: TextStyle(
-          fontSize: 14,
+          fontSize: 11,
           fontWeight: FontWeight.bold,
           color: Colors.white,
         ),
+      ),
+    );
+  }
+
+  void _handleMenuAction(BuildContext context, String action) {
+    switch (action) {
+      case 'info':
+        context.push('/tournaments/${widget.tournamentId}/info');
+        break;
+      case 'players':
+        context.push('/tournaments/${widget.tournamentId}/players');
+        break;
+      case 'schedule':
+        context.push('/tournaments/${widget.tournamentId}/schedule');
+        break;
+    }
+  }
+
+  void _showTeamRoster(BuildContext context, Team team) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => TeamRosterSheet(
+        team: team,
+        tournamentId: widget.tournamentId,
       ),
     );
   }
@@ -246,665 +324,51 @@ class _SliverTabBarDelegate extends SliverPersistentHeaderDelegate {
   }
 }
 
-/// Overview tab content
-class _OverviewTab extends StatelessWidget {
-  final Tournament tournament;
-
-  const _OverviewTab({required this.tournament});
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Info cards
-          _buildInfoSection(context),
-          const SizedBox(height: 24),
-
-          // Format
-          if (tournament.format != null) ...[
-            _buildSectionTitle(context, 'Format'),
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                tournament.format!,
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
-            ),
-            const SizedBox(height: 24),
-          ],
-
-          // Actions
-          if (tournament.liquipediaUrl != null)
-            _buildLiquipediaButton(context, tournament.liquipediaUrl!),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoSection(BuildContext context) {
-    return Column(
-      children: [
-        _buildInfoRow(
-          context,
-          Icons.calendar_today,
-          'Dates',
-          _formatDateRange(tournament),
-        ),
-        const SizedBox(height: 12),
-        _buildInfoRow(
-          context,
-          Icons.emoji_events,
-          'Prize Pool',
-          tournament.formattedPrizePool,
-        ),
-        if (tournament.region != null) ...[
-          const SizedBox(height: 12),
-          _buildInfoRow(
-            context,
-            Icons.public,
-            'Region',
-            tournament.region!,
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildInfoRow(
-    BuildContext context,
-    IconData icon,
-    String label,
-    String value,
-  ) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 24, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.grey[600],
-                      ),
-                ),
-                Text(
-                  value,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionTitle(BuildContext context, String title) {
-    return Text(
-      title,
-      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
-    );
-  }
-
-  Widget _buildLiquipediaButton(BuildContext context, String url) {
-    return SizedBox(
-      width: double.infinity,
-      child: OutlinedButton.icon(
-        onPressed: () => _launchUrl(url),
-        icon: const Icon(Icons.open_in_new),
-        label: const Text('View on Liquipedia'),
-      ),
-    );
-  }
-
-  String _formatDateRange(Tournament tournament) {
-    final dateFormat = DateFormat('MMMM d, yyyy');
-    final startStr = dateFormat.format(tournament.startDate);
-
-    if (tournament.endDate != null) {
-      final endStr = dateFormat.format(tournament.endDate!);
-      return '$startStr - $endStr';
-    }
-
-    return startStr;
-  }
-
-  Future<void> _launchUrl(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-  }
-}
-
-/// Teams tab content
-class _TeamsTab extends ConsumerWidget {
+/// Teams Grid Section widget
+class _TeamsGridSection extends ConsumerWidget {
   final String tournamentId;
+  final void Function(Team team) onTeamTap;
 
-  const _TeamsTab({required this.tournamentId});
+  const _TeamsGridSection({
+    required this.tournamentId,
+    required this.onTeamTap,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final teamsAsync = ref.watch(tournamentTeamsProvider(tournamentId));
 
     return teamsAsync.when(
-      loading: () => const LoadingIndicator(),
-      error: (error, stack) => app.AppErrorWidget(
-        message: error.toString(),
-        onRetry: () => ref.invalidate(tournamentTeamsProvider(tournamentId)),
+      loading: () => const SizedBox(
+        height: 120,
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      error: (error, stack) => SizedBox(
+        height: 100,
+        child: Center(
+          child: Text(
+            'Failed to load teams',
+            style: TextStyle(color: Colors.grey[600]),
+          ),
+        ),
       ),
       data: (teams) {
         if (teams.isEmpty) {
-          return const Center(
-            child: Text('No teams announced yet'),
+          return SizedBox(
+            height: 100,
+            child: Center(
+              child: Text(
+                'No teams announced yet',
+                style: TextStyle(color: Colors.grey[600]),
+              ),
+            ),
           );
         }
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: teams.length,
-          itemBuilder: (context, index) => _TeamCard(team: teams[index]),
+        return TeamsGrid(
+          teams: teams,
+          onTeamTap: onTeamTap,
         );
       },
     );
-  }
-}
-
-/// Team card widget
-class _TeamCard extends StatelessWidget {
-  final Team team;
-
-  const _TeamCard({required this.team});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            // Team logo placeholder
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: team.logoUrl != null
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.network(
-                        team.logoUrl!,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _buildLogoPlaceholder(context),
-                      ),
-                    )
-                  : _buildLogoPlaceholder(context),
-            ),
-            const SizedBox(width: 16),
-            // Team info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    team.name,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
-                  if (team.tag != null)
-                    Text(
-                      team.tag!,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Colors.grey[600],
-                          ),
-                    ),
-                  if (team.region != null)
-                    Text(
-                      team.region!,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Colors.grey[600],
-                          ),
-                    ),
-                ],
-              ),
-            ),
-            // Seed badge
-            if (team.seed != null)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  'Seed #${team.seed}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLogoPlaceholder(BuildContext context) {
-    return Center(
-      child: Text(
-        team.shortName,
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.bold,
-          color: Theme.of(context).colorScheme.primary,
-        ),
-      ),
-    );
-  }
-}
-
-/// Players tab content
-class _PlayersTab extends ConsumerWidget {
-  final String tournamentId;
-
-  const _PlayersTab({required this.tournamentId});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final playersState = ref.watch(tournamentPlayersProvider(tournamentId));
-
-    if (playersState.isLoading && playersState.players.isEmpty) {
-      return const LoadingIndicator();
-    }
-
-    if (playersState.error != null && playersState.players.isEmpty) {
-      return app.AppErrorWidget(
-        message: playersState.error!,
-        onRetry: () =>
-            ref.read(tournamentPlayersProvider(tournamentId).notifier).loadPlayers(refresh: true),
-      );
-    }
-
-    if (playersState.players.isEmpty) {
-      return const Center(
-        child: Text('No players registered yet'),
-      );
-    }
-
-    // Group players by role
-    final playersByRole = <PlayerRole, List<Player>>{};
-    final playersWithoutRole = <Player>[];
-
-    for (final player in playersState.players) {
-      if (player.role != null) {
-        playersByRole.putIfAbsent(player.role!, () => []).add(player);
-      } else {
-        playersWithoutRole.add(player);
-      }
-    }
-
-    return RefreshIndicator(
-      onRefresh: () async {
-        await ref.read(tournamentPlayersProvider(tournamentId).notifier).loadPlayers(refresh: true);
-      },
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // Players grouped by role
-          for (final role in PlayerRole.values)
-            if (playersByRole.containsKey(role)) ...[
-              _buildRoleHeader(context, role),
-              ...playersByRole[role]!.map((player) => PlayerCard(
-                    player: player,
-                    compact: true,
-                    showTeam: true,
-                    showFantasyPoints: false,
-                    onTap: () => context.push('/players/${player.id}'),
-                  )),
-              const SizedBox(height: 16),
-            ],
-          // Players without role
-          if (playersWithoutRole.isNotEmpty) ...[
-            _buildRoleHeader(context, null),
-            ...playersWithoutRole.map((player) => PlayerCard(
-                  player: player,
-                  compact: true,
-                  showTeam: true,
-                  showFantasyPoints: false,
-                  onTap: () => context.push('/players/${player.id}'),
-                )),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRoleHeader(BuildContext context, PlayerRole? role) {
-    final color = role != null ? _getRoleColor(role) : Colors.grey;
-    final text = role?.displayName ?? 'Other';
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Container(
-            width: 4,
-            height: 20,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            text,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Color _getRoleColor(PlayerRole role) {
-    switch (role) {
-      case PlayerRole.carry:
-        return Colors.red.shade700;
-      case PlayerRole.mid:
-        return Colors.orange.shade700;
-      case PlayerRole.offlane:
-        return Colors.green.shade700;
-      case PlayerRole.support4:
-        return Colors.blue.shade700;
-      case PlayerRole.support5:
-        return Colors.purple.shade700;
-    }
-  }
-}
-
-/// Schedule tab content
-class _ScheduleTab extends ConsumerWidget {
-  final String tournamentId;
-
-  const _ScheduleTab({required this.tournamentId});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final matchesAsync = ref.watch(tournamentMatchesProvider(tournamentId));
-
-    return matchesAsync.when(
-      loading: () => const LoadingIndicator(),
-      error: (error, stack) => app.AppErrorWidget(
-        message: error.toString(),
-        onRetry: () => ref.invalidate(tournamentMatchesProvider(tournamentId)),
-      ),
-      data: (matches) {
-        if (matches.isEmpty) {
-          return const Center(
-            child: Text('No matches scheduled yet'),
-          );
-        }
-
-        // Group matches by status
-        final liveMatches = matches.where((m) => m.isLive).toList();
-        final upcomingMatches = matches.where((m) => m.isUpcoming).toList();
-        final completedMatches = matches.where((m) => m.isCompleted).toList();
-
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            if (liveMatches.isNotEmpty) ...[
-              _buildSectionHeader(context, 'Live Now', AppTheme.statusLive),
-              ...liveMatches.map((m) => _MatchCard(match: m)),
-              const SizedBox(height: 16),
-            ],
-            if (upcomingMatches.isNotEmpty) ...[
-              _buildSectionHeader(context, 'Upcoming', AppTheme.statusUpcoming),
-              ...upcomingMatches.map((m) => _MatchCard(match: m)),
-              const SizedBox(height: 16),
-            ],
-            if (completedMatches.isNotEmpty) ...[
-              _buildSectionHeader(context, 'Completed', AppTheme.statusCompleted),
-              ...completedMatches.map((m) => _MatchCard(match: m)),
-            ],
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildSectionHeader(BuildContext context, String title, Color color) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          Container(
-            width: 4,
-            height: 20,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Match card widget
-class _MatchCard extends StatelessWidget {
-  final Match match;
-
-  const _MatchCard({required this.match});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            // Match header (stage/round info)
-            if (match.stage != null || match.round != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    if (match.stage != null)
-                      Text(
-                        match.stage!,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Colors.grey[600],
-                            ),
-                      ),
-                    Text(
-                      match.bestOfDisplay,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-            // Teams row
-            Row(
-              children: [
-                // Team 1
-                Expanded(
-                  child: Column(
-                    children: [
-                      _buildTeamLogo(context, match.team1),
-                      const SizedBox(height: 4),
-                      Text(
-                        match.team1?.shortName ?? 'TBD',
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
-                // Score or vs
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: match.isCompleted || match.isLive
-                      ? Column(
-                          children: [
-                            Text(
-                              match.scoreDisplay,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .headlineMedium
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                            ),
-                            if (match.isLive)
-                              Container(
-                                margin: const EdgeInsets.only(top: 4),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.statusLive,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: const Text(
-                                  'LIVE',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        )
-                      : Column(
-                          children: [
-                            Text(
-                              'VS',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleLarge
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.grey,
-                                  ),
-                            ),
-                            if (match.scheduledAt != null)
-                              Text(
-                                _formatTime(match.scheduledAt!),
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(
-                                      color: Colors.grey[600],
-                                    ),
-                              ),
-                          ],
-                        ),
-                ),
-                // Team 2
-                Expanded(
-                  child: Column(
-                    children: [
-                      _buildTeamLogo(context, match.team2),
-                      const SizedBox(height: 4),
-                      Text(
-                        match.team2?.shortName ?? 'TBD',
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            // Schedule date for upcoming
-            if (match.isUpcoming && match.scheduledAt != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                _formatDate(match.scheduledAt!),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.grey[600],
-                    ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTeamLogo(BuildContext context, Team? team) {
-    return Container(
-      width: 48,
-      height: 48,
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Center(
-        child: Text(
-          team?.shortName ?? '?',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-        ),
-      ),
-    );
-  }
-
-  String _formatTime(DateTime dateTime) {
-    return DateFormat('HH:mm').format(dateTime);
-  }
-
-  String _formatDate(DateTime dateTime) {
-    return DateFormat('MMM d, yyyy • HH:mm').format(dateTime);
   }
 }
