@@ -217,7 +217,7 @@ export class TournamentImporter {
         const leagueId = parseInt(tournament.leagueId, 10);
 
         if (!isNaN(leagueId)) {
-          const { matchCount, stratzTeamIdToGroup } = await this.importMatchesFromStratz(
+          const { matchCount, stratzTeamIdToGroup, stratzTeamInfo } = await this.importMatchesFromStratz(
             dbTournament.id,
             leagueId,
             allParticipants,
@@ -233,6 +233,12 @@ export class TournamentImporter {
               allParticipants,
               stratzTeamIdToGroup,
             );
+          }
+
+          // Step 10: Update team tags from STRATZ data
+          if (stratzTeamInfo.size > 0 && !this.options.dryRun) {
+            this.logger.section('Updating Team Tags from STRATZ');
+            await this.updateTeamTagsFromStratz(allParticipants, stratzTeamInfo);
           }
         } else {
           this.logger.warn(`Invalid leagueId: ${tournament.leagueId}`);
@@ -514,7 +520,11 @@ export class TournamentImporter {
     tournamentId: string,
     leagueId: number,
     participants: LiquipediaParticipant[],
-  ): Promise<{ matchCount: number; stratzTeamIdToGroup: Map<number, string> }> {
+  ): Promise<{
+    matchCount: number;
+    stratzTeamIdToGroup: Map<number, string>;
+    stratzTeamInfo: Map<number, { name: string; tag: string }>;
+  }> {
     try {
       // First fetch league structure for stage/round mapping
       const { seriesIdToStage, stratzTeamIdToGroup } = await this.fetchLeagueStructure(leagueId);
@@ -522,13 +532,16 @@ export class TournamentImporter {
       // Fetch ALL league matches from backend using pagination
       const allMatches: Array<{
         matchId: number;
-        radiantTeam?: { id: number; name: string };
-        direTeam?: { id: number; name: string };
+        radiantTeam?: { id: number; name: string; tag?: string };
+        direTeam?: { id: number; name: string; tag?: string };
         radiantWin?: boolean;
         startDateTime?: number;
         durationSeconds?: number;
         seriesId?: number;
       }> = [];
+
+      // Collect STRATZ team info (id -> {name, tag})
+      const stratzTeamInfo = new Map<number, { name: string; tag: string }>();
 
       const batchSize = 100;
       let skip = 0;
@@ -549,8 +562,8 @@ export class TournamentImporter {
           success: boolean;
           data: Array<{
             matchId: number;
-            radiantTeam?: { id: number; name: string };
-            direTeam?: { id: number; name: string };
+            radiantTeam?: { id: number; name: string; tag?: string };
+            direTeam?: { id: number; name: string; tag?: string };
             radiantWin?: boolean;
             startDateTime?: number;
             durationSeconds?: number;
@@ -561,6 +574,22 @@ export class TournamentImporter {
         if (!json.success || !json.data || json.data.length === 0) {
           hasMore = false;
           break;
+        }
+
+        // Collect team info (name + tag) from STRATZ
+        for (const match of json.data) {
+          if (match.radiantTeam?.id && match.radiantTeam?.name && match.radiantTeam?.tag) {
+            stratzTeamInfo.set(match.radiantTeam.id, {
+              name: match.radiantTeam.name,
+              tag: match.radiantTeam.tag,
+            });
+          }
+          if (match.direTeam?.id && match.direTeam?.name && match.direTeam?.tag) {
+            stratzTeamInfo.set(match.direTeam.id, {
+              name: match.direTeam.name,
+              tag: match.direTeam.tag,
+            });
+          }
         }
 
         allMatches.push(...json.data);
@@ -656,7 +685,7 @@ export class TournamentImporter {
 
         if (error) {
           this.logger.error(`Failed to insert matches: ${error.message}`);
-          return { matchCount: 0, stratzTeamIdToGroup };
+          return { matchCount: 0, stratzTeamIdToGroup, stratzTeamInfo };
         }
 
         this.logger.success(`Imported ${dbMatches.length} matches`);
@@ -664,16 +693,17 @@ export class TournamentImporter {
         this.logger.info(`[DRY RUN] Would import ${dbMatches.length} matches`);
       }
 
-      return { matchCount: dbMatches.length, stratzTeamIdToGroup };
+      this.logger.info(`Collected ${stratzTeamInfo.size} team tags from STRATZ`);
+      return { matchCount: dbMatches.length, stratzTeamIdToGroup, stratzTeamInfo };
 
     } catch (error) {
       this.logger.error('Failed to import matches', error instanceof Error ? error : undefined);
-      return { matchCount: 0, stratzTeamIdToGroup: new Map() };
+      return { matchCount: 0, stratzTeamIdToGroup: new Map(), stratzTeamInfo: new Map() };
     }
   }
 
   /**
-   * Update tournament teams with group assignments from STRATZ
+   * Update tournament teams with group assignments and standings from STRATZ
    */
   private async updateTeamGroupsFromStratz(
     tournamentId: string,
@@ -683,14 +713,87 @@ export class TournamentImporter {
   ): Promise<void> {
     if (stratzTeamIdToGroup.size === 0) return;
 
-    // Build map of team name to STRATZ team ID (from match data)
-    // We need to fetch one batch of matches to get this mapping
-    const url = `${this.backendUrl}/api/v1/stratz/league/${leagueId}/matches?take=100`;
     try {
-      const response = await fetch(url);
-      if (!response.ok) return;
+      // Fetch league structure for standings calculation
+      const leagueUrl = `${this.backendUrl}/api/v1/stratz/league/${leagueId}`;
+      const leagueResponse = await fetch(leagueUrl);
+      if (!leagueResponse.ok) return;
 
-      const json = await response.json() as {
+      const leagueJson = await leagueResponse.json() as {
+        success: boolean;
+        data: {
+          nodeGroups?: Array<{
+            name: string;
+            nodeGroupType: string;
+            nodes?: Array<{
+              teamOneId?: number;
+              teamTwoId?: number;
+              teamOneWins?: number;
+              teamTwoWins?: number;
+            }>;
+          }>;
+        };
+      };
+
+      // Calculate standings for each team from group stage series
+      const teamStandings = new Map<number, {
+        wins: number;
+        losses: number;
+        draws: number;
+        gameWins: number;
+        gameLosses: number;
+      }>();
+
+      if (leagueJson.success && leagueJson.data?.nodeGroups) {
+        for (const nodeGroup of leagueJson.data.nodeGroups) {
+          // Only process group stage (round robin) matches
+          if (nodeGroup.nodeGroupType !== 'ROUND_ROBIN' || !nodeGroup.nodes) continue;
+
+          for (const node of nodeGroup.nodes) {
+            if (!node.teamOneId || !node.teamTwoId) continue;
+            const t1Wins = node.teamOneWins || 0;
+            const t2Wins = node.teamTwoWins || 0;
+
+            // Initialize standings if needed
+            if (!teamStandings.has(node.teamOneId)) {
+              teamStandings.set(node.teamOneId, { wins: 0, losses: 0, draws: 0, gameWins: 0, gameLosses: 0 });
+            }
+            if (!teamStandings.has(node.teamTwoId)) {
+              teamStandings.set(node.teamTwoId, { wins: 0, losses: 0, draws: 0, gameWins: 0, gameLosses: 0 });
+            }
+
+            const t1Stats = teamStandings.get(node.teamOneId)!;
+            const t2Stats = teamStandings.get(node.teamTwoId)!;
+
+            // Add game wins/losses
+            t1Stats.gameWins += t1Wins;
+            t1Stats.gameLosses += t2Wins;
+            t2Stats.gameWins += t2Wins;
+            t2Stats.gameLosses += t1Wins;
+
+            // Determine series result (for Bo2: 2-0 = win, 0-2 = loss, 1-1 = draw)
+            if (t1Wins > t2Wins) {
+              t1Stats.wins++;
+              t2Stats.losses++;
+            } else if (t2Wins > t1Wins) {
+              t2Stats.wins++;
+              t1Stats.losses++;
+            } else {
+              t1Stats.draws++;
+              t2Stats.draws++;
+            }
+          }
+        }
+      }
+
+      this.logger.info(`Calculated standings for ${teamStandings.size} teams`);
+
+      // Build team name to STRATZ ID mapping from match data
+      const matchUrl = `${this.backendUrl}/api/v1/stratz/league/${leagueId}/matches?take=100`;
+      const matchResponse = await fetch(matchUrl);
+      if (!matchResponse.ok) return;
+
+      const matchJson = await matchResponse.json() as {
         success: boolean;
         data: Array<{
           radiantTeam?: { id: number; name: string };
@@ -698,11 +801,10 @@ export class TournamentImporter {
         }>;
       };
 
-      if (!json.success || !json.data) return;
+      if (!matchJson.success || !matchJson.data) return;
 
-      // Build team name to STRATZ ID mapping
       const teamNameToStratzId = new Map<string, number>();
-      for (const match of json.data) {
+      for (const match of matchJson.data) {
         if (match.radiantTeam) {
           teamNameToStratzId.set(this.normalizeTeamName(match.radiantTeam.name), match.radiantTeam.id);
         }
@@ -711,35 +813,126 @@ export class TournamentImporter {
         }
       }
 
-      // Update each team's group using fuzzy matching
+      // Update each team's group and standings
       let groupsUpdated = 0;
       for (const participant of participants) {
-        // Use fuzzy matching to find STRATZ team ID
         const stratzId = this.findStratzTeamId(participant.teamName, teamNameToStratzId);
 
         if (stratzId && stratzTeamIdToGroup.has(stratzId)) {
           const groupName = stratzTeamIdToGroup.get(stratzId)!;
           const teamId = generateTeamId(participant.teamName);
+          const standings = teamStandings.get(stratzId);
+
+          const updateData: Record<string, unknown> = { group_name: groupName };
+          if (standings) {
+            updateData.wins = standings.wins;
+            updateData.losses = standings.losses;
+            updateData.draws = standings.draws;
+            updateData.game_wins = standings.gameWins;
+            updateData.game_losses = standings.gameLosses;
+          }
 
           const { error } = await this.supabase
             .from('tournament_teams')
-            .update({ group_name: groupName })
+            .update(updateData)
             .eq('tournament_id', tournamentId)
             .eq('team_id', teamId);
 
           if (!error) {
             groupsUpdated++;
-            this.logger.debug(`${participant.teamName} -> ${groupName}`);
+            const standingsStr = standings
+              ? ` (${standings.wins}W-${standings.losses}L-${standings.draws}D)`
+              : '';
+            this.logger.debug(`${participant.teamName} -> ${groupName}${standingsStr}`);
           }
         } else {
           this.logger.debug(`No group found for: ${participant.teamName}`);
         }
       }
 
-      this.logger.success(`Updated ${groupsUpdated} team group assignments`);
+      this.logger.success(`Updated ${groupsUpdated} team group assignments with standings`);
 
     } catch (error) {
       this.logger.debug('Failed to update team groups');
+    }
+  }
+
+  /**
+   * Update team tags from STRATZ data
+   * STRATZ provides official team abbreviations (e.g., "EG" for Evil Geniuses)
+   */
+  private async updateTeamTagsFromStratz(
+    participants: LiquipediaParticipant[],
+    stratzTeamInfo: Map<number, { name: string; tag: string }>,
+  ): Promise<void> {
+    if (stratzTeamInfo.size === 0) return;
+
+    try {
+      // Build a map of normalized STRATZ team name -> tag
+      const stratzNameToTag = new Map<string, string>();
+      for (const [_, info] of stratzTeamInfo.entries()) {
+        stratzNameToTag.set(this.normalizeTeamName(info.name), info.tag);
+      }
+
+      this.logger.info(`Matching ${participants.length} teams to ${stratzNameToTag.size} STRATZ teams`);
+
+      let tagsUpdated = 0;
+
+      for (const participant of participants) {
+        const teamId = generateTeamId(participant.teamName);
+        const normalizedName = this.normalizeTeamName(participant.teamName);
+
+        // Find matching STRATZ team tag using fuzzy matching
+        let stratzTag: string | undefined;
+
+        // Exact match first
+        if (stratzNameToTag.has(normalizedName)) {
+          stratzTag = stratzNameToTag.get(normalizedName);
+        } else {
+          // Substring match
+          for (const [stratzName, tag] of stratzNameToTag.entries()) {
+            if (stratzName.includes(normalizedName) || normalizedName.includes(stratzName)) {
+              stratzTag = tag;
+              break;
+            }
+          }
+
+          // Word-based matching if still not found
+          if (!stratzTag) {
+            const inputWords = normalizedName.split(' ').filter(w => w.length > 2);
+            for (const [stratzName, tag] of stratzNameToTag.entries()) {
+              const nameWords = stratzName.split(' ').filter(w => w.length > 2);
+              const matchingWords = inputWords.filter(w =>
+                nameWords.some(nw => nw === w || nw.includes(w) || w.includes(nw))
+              );
+              if (matchingWords.length >= Math.max(1, inputWords.length / 2)) {
+                stratzTag = tag;
+                break;
+              }
+            }
+          }
+        }
+
+        if (stratzTag) {
+          // Update the team's tag in the database
+          const { error } = await this.supabase
+            .from('teams')
+            .update({ tag: stratzTag, updated_at: new Date().toISOString() })
+            .eq('id', teamId);
+
+          if (!error) {
+            tagsUpdated++;
+            this.logger.debug(`${participant.teamName} -> ${stratzTag}`);
+          }
+        } else {
+          this.logger.debug(`No STRATZ tag found for: ${participant.teamName}`);
+        }
+      }
+
+      this.logger.success(`Updated ${tagsUpdated}/${participants.length} team tags from STRATZ`);
+
+    } catch (error) {
+      this.logger.debug('Failed to update team tags');
     }
   }
 

@@ -79,6 +79,11 @@ export class TournamentsService {
         group_name,
         placement,
         prize_won,
+        wins,
+        losses,
+        draws,
+        game_wins,
+        game_losses,
         team:teams(*)
       `)
       .eq('tournament_id', tournamentId)
@@ -94,6 +99,11 @@ export class TournamentsService {
       groupName: item.group_name,
       placement: item.placement,
       prizeWon: item.prize_won,
+      wins: item.wins,
+      losses: item.losses,
+      draws: item.draws,
+      gameWins: item.game_wins,
+      gameLosses: item.game_losses,
     })) || [];
 
     return { data: teams };

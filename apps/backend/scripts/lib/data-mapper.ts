@@ -255,6 +255,11 @@ export interface DbTournamentTeam {
   group_name?: string;
   placement?: number;
   prize_won?: number;
+  wins?: number;
+  losses?: number;
+  draws?: number;
+  game_wins?: number;
+  game_losses?: number;
 }
 
 export interface DbPlayer {
