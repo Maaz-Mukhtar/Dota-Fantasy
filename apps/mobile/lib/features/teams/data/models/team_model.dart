@@ -13,6 +13,11 @@ class TeamModel {
   final String? groupName;
   final int? placement;
   final double? prizeWon;
+  final int? wins;
+  final int? losses;
+  final int? draws;
+  final int? gameWins;
+  final int? gameLosses;
 
   TeamModel({
     required this.id,
@@ -26,6 +31,11 @@ class TeamModel {
     this.groupName,
     this.placement,
     this.prizeWon,
+    this.wins,
+    this.losses,
+    this.draws,
+    this.gameWins,
+    this.gameLosses,
   });
 
   factory TeamModel.fromJson(Map<String, dynamic> json) {
@@ -45,6 +55,11 @@ class TeamModel {
       prizeWon: json['prizeWon'] != null
           ? (json['prizeWon'] as num).toDouble()
           : null,
+      wins: json['wins'] as int?,
+      losses: json['losses'] as int?,
+      draws: json['draws'] as int?,
+      gameWins: json['gameWins'] as int?,
+      gameLosses: json['gameLosses'] as int?,
     );
   }
 
@@ -61,6 +76,11 @@ class TeamModel {
       'groupName': groupName,
       'placement': placement,
       'prizeWon': prizeWon,
+      'wins': wins,
+      'losses': losses,
+      'draws': draws,
+      'gameWins': gameWins,
+      'gameLosses': gameLosses,
     };
   }
 
@@ -77,6 +97,11 @@ class TeamModel {
       groupName: groupName,
       placement: placement,
       prizeWon: prizeWon,
+      wins: wins,
+      losses: losses,
+      draws: draws,
+      gameWins: gameWins,
+      gameLosses: gameLosses,
     );
   }
 }

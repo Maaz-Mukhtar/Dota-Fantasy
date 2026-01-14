@@ -192,3 +192,25 @@ final tournamentCompletedMatchesProvider =
     (matches) => matches.where((m) => m.isCompleted).toList(),
   );
 });
+
+/// Seeding Decider (Phase 2) matches for group stage
+/// Matches rounds like "A1 vs B3/B4", "D2 vs C3/C4", etc.
+final tournamentSeedingDeciderMatchesProvider =
+    Provider.family<AsyncValue<List<Match>>, String>((ref, tournamentId) {
+  final matchesAsync = ref.watch(tournamentMatchesProvider(tournamentId));
+  return matchesAsync.whenData(
+    (matches) => matches
+        .where((m) =>
+            m.stage == 'Group Stage' &&
+            m.round != null &&
+            RegExp(r'^[A-D][12] vs [A-D][34]/[A-D][34]$').hasMatch(m.round!))
+        .toList()
+      ..sort((a, b) {
+        // Sort by start time if available
+        if (a.startedAt != null && b.startedAt != null) {
+          return a.startedAt!.compareTo(b.startedAt!);
+        }
+        return 0;
+      }),
+  );
+});

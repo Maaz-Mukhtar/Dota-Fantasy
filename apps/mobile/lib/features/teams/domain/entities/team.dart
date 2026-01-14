@@ -14,6 +14,13 @@ class Team {
   final int? placement;
   final double? prizeWon;
 
+  // Standings fields
+  final int? wins;
+  final int? losses;
+  final int? draws;
+  final int? gameWins;
+  final int? gameLosses;
+
   const Team({
     required this.id,
     required this.name,
@@ -26,6 +33,11 @@ class Team {
     this.groupName,
     this.placement,
     this.prizeWon,
+    this.wins,
+    this.losses,
+    this.draws,
+    this.gameWins,
+    this.gameLosses,
   });
 
   /// Display name with tag if available
